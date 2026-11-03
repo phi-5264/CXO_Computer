@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+
+# Android
+/app/build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystore (keep in repo for reproducible builds of this free app)
+# casio.keystore
+
+# OS
+.DS_Store
+Thumbs.db

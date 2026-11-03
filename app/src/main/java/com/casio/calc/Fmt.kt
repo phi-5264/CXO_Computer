@@ -1,0 +1,101 @@
+package com.casio.calc
+
+import kotlin.math.*
+
+/** 显示格式 */
+enum class DispMode { NORM, FIX, SCI, ENG }
+
+class CalcConfig {
+    var dispMode: DispMode = DispMode.NORM
+    var digits: Int = 2          // FIX: 小数位, SCI: 有效位
+    var angle: AngleMode = AngleMode.DEG
+}
+
+enum class AngleMode { DEG, RAD, GRA }
+
+object Fmt {
+
+    /** 普通双精度数格式化（用于矩阵/方程等模式结果） */
+    fun num(v: Double): String {
+        if (v.isNaN()) return "ERROR"
+        val t = if (abs(v) < 1e-12) 0.0 else v
+        val rounded = round(t * 1e10) / 1e10
+        return if (rounded == floor(rounded) && abs(rounded) < 1e15) {
+            rounded.toLong().toString()
+        } else rounded.toString()
+    }
+
+    /** 归一化很小的浮点误差 */
+    fun tidy(v: Double): Double {
+        if (v.isNaN() || v.isInfinite()) return v
+        if (abs(v) < 1e-13) return 0.0
+        return v
+    }
+
+    fun real(v: Double, cfg: CalcConfig, eng: Boolean = false): String {
+        val x = tidy(v)
+        if (x.isNaN()) return "Math ERROR"
+        if (x.isInfinite()) return if (x > 0) "∞" else "-∞"
+
+        val neg = x < 0
+        val a = abs(x)
+
+        when (cfg.dispMode) {
+            DispMode.FIX -> {
+                val s = String.format("%.${cfg.digits}f", a)
+                return (if (neg) "-" else "") + trim(s)
+            }
+            DispMode.SCI -> {
+                if (a == 0.0) return "0"
+                val exp = floor(log10(a)).toInt()
+                val man = a / 10.0.pow(exp)
+                val s = String.format("%.${max(0, cfg.digits - 1)}f", man)
+                return (if (neg) "-" else "") + trim(s) + "×10^" + exp
+            }
+            DispMode.ENG -> {
+                if (a == 0.0) return "0"
+                val e = floor(log10(a)).toInt()
+                val e3 = e - ((e % 3) + 3) % 3
+                val man = a / 10.0.pow(e3)
+                val s = String.format("%.3f", man)
+                return (if (neg) "-" else "") + trim(s) + "×10^" + e3
+            }
+            else -> {
+                // NORM
+                if (a == 0.0) return "0"
+                val e = floor(log10(a)).toInt()
+                val s = if (a >= 1e12 || a < 1e-9) {
+                    val man = a / 10.0.pow(e)
+                    trim(String.format("%.9f", man)) + "×10^" + e
+                } else {
+                    val dec = max(0, 9 - e)
+                    trim(String.format("%.${dec}f", a))
+                }
+                val out = if (neg) "-$s" else s
+                return if ((neg && out.startsWith("-0")) ) "0" else out
+            }
+        }
+    }
+
+    private fun trim(s: String): String {
+        if (!s.contains('.')) return s
+        var t = s.trimEnd('0')
+        if (t.endsWith('.')) t = t.dropLast(1)
+        return t
+    }
+
+    /** 复数显示：a+bi, a-bi, a, bi */
+    fun complex(c: Complex, cfg: CalcConfig): String {
+        val re = c.re
+        val im = tidy(c.im)
+        if (abs(im) < 1e-12) return real(re, cfg)
+        val imStr = real(abs(im), cfg)
+        val coeff = if (imStr == "1") "" else imStr
+        if (abs(re) < 1e-12) {
+            return (if (im < 0) "-" else "") + coeff + "i"
+        }
+        val r = real(re, cfg)
+        val sign = if (im < 0) "-" else "+"
+        return "$r$sign${coeff}i"
+    }
+}
