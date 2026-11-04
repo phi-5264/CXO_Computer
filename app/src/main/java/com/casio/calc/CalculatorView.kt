@@ -256,7 +256,7 @@ class CalculatorView @JvmOverloads constructor(
         canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcdBorder)
     }
 
-    /** 渲染表达式 + 光标（稳定版：先 measure 再 layout 再 draw） */
+    /** 渲染单行表达式 + 光标 */
     private fun drawExpression(canvas: Canvas, padL: Float, padR: Float) {
         val tokens = state.tokens
         val exprY = displayRect.top + dp(62f)
@@ -269,12 +269,12 @@ class CalculatorView @JvmOverloads constructor(
             return
         }
 
-        // 稳定的三步流程
-        val (tree, _) = layoutAndRender(tokens, brushExprBold, padL, exprY, canvas)
+        // 单行渲染
+        val layout = drawLine(canvas, tokens, brushExprBold, padL, exprY)
 
         // 光标
         if (cursorBlink) {
-            val cx = computeCursorX(tokens, state.cursor, brushExprBold, padL, exprY)
+            val cx = computeCursorX(tokens, state.cursor, brushExprBold, padL)
             drawCursorAt(canvas, cx, exprY, brushExprBold)
         }
     }
@@ -392,8 +392,7 @@ class CalculatorView @JvmOverloads constructor(
             // 非 GRAPH 模式：显示区点击 → 光标定位
             if (state.mode != Mode.GRAPH && displayRect.contains(x, y)) {
                 val padL = displayRect.left + dp(14f)
-                val exprY = displayRect.top + dp(62f)
-                val idx = findCursorByX(state.tokens.toList(), x, brushExprBold, padL, exprY)
+                val idx = findCursorByX(state.tokens.toList(), x, brushExprBold, padL)
                 state.cursor = idx
                 invalidate()
                 return true
