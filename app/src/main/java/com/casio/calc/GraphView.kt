@@ -29,6 +29,10 @@ class GraphView @JvmOverloads constructor(
     // 3D 视角
     var azim = -35.0   // 方位角
     var elev = 30.0    // 仰角
+    var zoom3D = 1.0   // 3D 缩放
+
+    private val density = resources.displayMetrics.density
+    private fun dp(v: Float) = v * density
 
     private val paintGrid = Paint().apply {
         color = Color.rgb(0xcc, 0xcc, 0xcc)
@@ -54,38 +58,52 @@ class GraphView @JvmOverloads constructor(
     private var lastX = 0f; private var lastY = 0f
     private var scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            val factor = detector.scaleFactor
-            val cx = (xMin + xMax) / 2.0
-            val cy = (yMin + yMax) / 2.0
-            val dx = (xMax - xMin) / 2.0 / factor
-            val dy = (yMax - yMin) / 2.0 / factor
-            xMin = cx - dx; xMax = cx + dx
-            yMin = cy - dy; yMax = cy + dy
-            invalidate()
+            zoomBy(detector.scaleFactor.toDouble())
             return true
         }
     })
 
+    /** 缩放：2D 缩放视口，3D 缩放任一视角大小 */
+    fun zoomBy(factor: Double) {
+        if (mode2D) {
+            val cx = (xMin + xMax) / 2.0
+            val cy = (yMin + yMax) / 2.0
+            val hw = (xMax - xMin) / 2.0 / factor
+            val hh = (yMax - yMin) / 2.0 / factor
+            xMin = cx - hw; xMax = cx + hw
+            yMin = cy - hh; yMax = cy + hh
+        } else {
+            zoom3D = (zoom3D * factor).coerceIn(0.35, 4.0)
+        }
+    }
+
+    /** 重置视角 */
+    fun resetView() {
+        xMin = -10.0; xMax = 10.0; yMin = -6.0; yMax = 6.0
+        azim = -35.0; elev = 30.0; zoom3D = 1.0
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (scaleDetector.onTouchEvent(event)) return true
+        scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastX = event.x; lastY = event.y
             }
             MotionEvent.ACTION_MOVE -> {
-                val dx = event.x - lastX
-                val dy = event.y - lastY
-                if (mode2D) {
-                    val w = width.toFloat()
-                    val h = height.toFloat()
-                    xMin -= (xMax - xMin) * dx / w; xMax -= (xMax - xMin) * dx / w
-                    yMin += (yMax - yMin) * dy / h; yMax += (yMax - yMin) * dy / h
-                } else {
-                    azim += dx * 0.3
-                    elev += dy * 0.3
+                if (event.pointerCount == 1 && !scaleDetector.isInProgress) {
+                    val dx = event.x - lastX
+                    val dy = event.y - lastY
+                    if (mode2D) {
+                        val w = width.toFloat().coerceAtLeast(1f)
+                        val h = height.toFloat().coerceAtLeast(1f)
+                        xMin -= (xMax - xMin) * dx / w; xMax -= (xMax - xMin) * dx / w
+                        yMin += (yMax - yMin) * dy / h; yMax += (yMax - yMin) * dy / h
+                    } else {
+                        azim += dx * 0.3
+                        elev = (elev + dy * 0.3).coerceIn(-85.0, 85.0)
+                    }
+                    lastX = event.x; lastY = event.y
                 }
-                lastX = event.x; lastY = event.y
-                invalidate()
             }
         }
         return true
@@ -98,6 +116,7 @@ class GraphView @JvmOverloads constructor(
 
     private fun draw2D(canvas: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
+        paintTextSmall.textSize = dp(8f)
         // 网格
         val xStep = niceStep(xMax - xMin)
         val yStep = niceStep(yMax - yMin)
@@ -107,20 +126,20 @@ class GraphView @JvmOverloads constructor(
         while (gx <= xMax + 1e-9) {
             val px = xToPx(gx, w)
             canvas.drawLine(px, 0f, px, h, paintGrid)
-            canvas.drawText(Fmt.num(gx), px + 4f, yToPx(0.0, h) - 6f, paintTextSmall)
+            if (abs(gx) > 1e-9) canvas.drawText(Fmt.num(gx), px + 2f, yToPx(0.0, h) - 2f, paintTextSmall)
             gx += xStep
         }
         var gy = ceil(yMin / yStep) * yStep
         while (gy <= yMax + 1e-9) {
             val py = yToPx(gy, h)
             canvas.drawLine(0f, py, w, py, paintGrid)
-            canvas.drawText(Fmt.num(gy), xToPx(0.0, w) + 4f, py - 4f, paintTextSmall)
+            if (abs(gy) > 1e-9) canvas.drawText(Fmt.num(gy), xToPx(0.0, w) + 2f, py - 2f, paintTextSmall)
             gy += yStep
         }
         paintGrid.pathEffect = null
 
         // 坐标轴
-        paintAxis.strokeWidth = 2.5f
+        paintAxis.strokeWidth = dp(1.2f)
         if (xMin <= 0 && xMax >= 0) canvas.drawLine(xToPx(0.0, w), 0f, xToPx(0.0, w), h, paintAxis)
         if (yMin <= 0 && yMax >= 0) canvas.drawLine(0f, yToPx(0.0, h), w, yToPx(0.0, h), paintAxis)
 
@@ -128,132 +147,140 @@ class GraphView @JvmOverloads constructor(
         drawCurve2D(canvas)
 
         // 标题
-        paintLabel.textSize = 36f
-        canvas.drawText("y = $expr2D", 16f, 48f, paintLabel)
+        paintLabel.textSize = dp(10f)
+        var shown = expr2D
+        while (paintLabel.measureText("y=$shown") > w - dp(16f) && shown.length > 4) {
+            shown = shown.substring(0, shown.length - 1)
+        }
+        canvas.drawText("y=$shown", dp(6f), dp(14f), paintLabel)
     }
 
     private fun drawCurve2D(canvas: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        val step = (xMax - xMin) / (w * 2)
+        val samples = min(600, max(200, w.toInt()))
+        val step = (xMax - xMin) / samples
         val path = Path()
         var started = false
         var prevValid = false
         var prevY = 0.0
-        for (x in generateSequence(xMin) { it + step }.takeWhile { it <= xMax }) {
+        var x = xMin
+        while (x <= xMax) {
             val y = evalAt(expr2D, mapOf("X" to x, "Y" to 0.0))
             val valid = y.isFinite() && !y.isNaN()
             if (valid) {
                 val px = xToPx(x, w); val py = yToPx(y, h)
                 if (!started) { path.moveTo(px, py); started = true }
-                else {
-                    // 检测不连续（跳变超过范围）
-                    if (prevValid && abs(y - prevY) > (yMax - yMin) * 2) {
-                        path.moveTo(px, py)
-                    } else {
-                        path.lineTo(px, py)
-                    }
+                else if (prevValid && abs(y - prevY) > (yMax - yMin) * 2) {
+                    path.moveTo(px, py)
+                } else {
+                    path.lineTo(px, py)
                 }
             } else {
                 started = false
             }
             prevValid = valid; prevY = y
+            x += step
         }
         canvas.drawPath(path, paintCurve)
     }
 
     private fun draw3D(canvas: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        val cx = w / 2f; val cy = h / 2f
-        // 网格大小
+        val cx = w / 2f
+        val cy = h * 0.58f
         val range = 5.0
-        val steps = 40
+        val steps = 26
         val step = range * 2 / steps
 
-        // 计算网格点
-        val grid = Array(steps + 1) { i ->
-            Array(steps + 1) { j ->
+        // 采样曲面并归一化 z
+        val zs = Array(steps + 1) { i ->
+            DoubleArray(steps + 1) { j ->
                 val x = -range + i * step
                 val y = -range + j * step
                 val z = evalAt(expr3D, mapOf("X" to x, "Y" to y))
-                Triple(x, y, if (z.isFinite() && !z.isNaN()) z else 0.0)
+                if (z.isFinite()) z else 0.0
             }
         }
+        var minZ = Double.MAX_VALUE
+        var maxZ = -Double.MAX_VALUE
+        for (row in zs) for (v in row) { if (v < minZ) minZ = v; if (v > maxZ) maxZ = v }
+        if (maxZ - minZ < 1e-9) { minZ -= 1.0; maxZ += 1.0 }
+        val midZ = (minZ + maxZ) / 2.0
+        val spanZ = maxZ - minZ
 
-        // 旋转 + 投影
         val az = Math.toRadians(azim)
         val el = Math.toRadians(elev)
         val cosA = cos(az); val sinA = sin(az)
         val cosE = cos(el); val sinE = sin(el)
 
-        val scale = min(w, h) / (range * 5)
+        val scaleXY = min(w / (range * 2.8f), h / (range * 1.9f)) * zoom3D.toFloat()
+        val scaleZ = (h * 0.8f / spanZ) * zoom3D
 
-        data class ProjPt(val px: Float, val py: Float, val z: Float)
-        fun project(pt: Triple<Double, Double, Double>): ProjPt {
-            val (x, y, z) = pt
-            // 先绕 y 轴（方位）
-            val x1 = x * cosA - y * sinA
-            val y1 = x * sinA + y * cosA
-            val z1 = z
-            // 再绕 x 轴（仰角）
-            val x2 = x1
-            val y2 = y1 * cosE - z1 * sinE
-            val z2 = y1 * sinE + z1 * cosE
-            return ProjPt((cx + x2 * scale).toFloat(), (cy - y2 * scale).toFloat(), z2.toFloat())
+        fun project(x: Double, y: Double, z: Double): Triple<Float, Float, Float> {
+            val xr = x * cosA - y * sinA
+            val yr = x * sinA + y * cosA
+            val dz = z - midZ
+            val px = cx + (xr * scaleXY).toFloat()
+            val py = cy + (yr * scaleXY * sinE).toFloat() - (dz * cosE * scaleZ).toFloat()
+            return Triple(px, py, yr.toFloat())
         }
 
-        // 绘制深度排序（从后到前）
-        // 每个方格 = 4 个点，深度取 avg
-        data class Quad(val p0: ProjPt, val p1: ProjPt, val p2: ProjPt, val p3: ProjPt, val depth: Float, val z: Double)
+        // 四边面片
+        data class Quad(val p0: Triple<Float, Float, Float>, val p1: Triple<Float, Float, Float>,
+                        val p2: Triple<Float, Float, Float>, val p3: Triple<Float, Float, Float>,
+                        val depth: Float, val z: Double)
 
-        val quads = mutableListOf<Quad>()
+        val quads = ArrayList<Quad>(steps * steps)
         for (i in 0 until steps) {
             for (j in 0 until steps) {
-                val z00 = grid[i][j].third
-                val z10 = grid[i + 1][j].third
-                val z01 = grid[i][j + 1].third
-                val z11 = grid[i + 1][j + 1].third
+                val z00 = zs[i][j]; val z10 = zs[i + 1][j]
+                val z01 = zs[i][j + 1]; val z11 = zs[i + 1][j + 1]
                 val avgZ = (z00 + z10 + z01 + z11) / 4
-                val p0 = project(grid[i][j])
-                val p1 = project(grid[i + 1][j])
-                val p2 = project(grid[i + 1][j + 1])
-                val p3 = project(grid[i][j + 1])
-                val depth = (p0.z + p1.z + p2.z + p3.z) / 4f
+                val x0 = -range + i * step; val x1 = -range + (i + 1) * step
+                val y0 = -range + j * step; val y1 = -range + (j + 1) * step
+                val p0 = project(x0, y0, z00)
+                val p1 = project(x1, y0, z10)
+                val p2 = project(x1, y1, z11)
+                val p3 = project(x0, y1, z01)
+                val depth = (p0.third + p1.third + p2.third + p3.third) / 4f
                 quads.add(Quad(p0, p1, p2, p3, depth, avgZ))
             }
         }
         quads.sortBy { it.depth }
 
-        // 画坐标轴（在中心）
-        paintAxis.strokeWidth = 3f
-        val origin = project(Triple(0.0, 0.0, 0.0))
-        val ex = project(Triple(range, 0.0, 0.0))
-        val ey = project(Triple(0.0, range, 0.0))
-        val ez = project(Triple(0.0, 0.0, range))
-        canvas.drawLine(origin.px, origin.py, ex.px, ex.py, paintAxis)
-        canvas.drawLine(origin.px, origin.py, ey.px, ey.py, paintAxis)
-        canvas.drawLine(origin.px, origin.py, ez.px, ez.py, paintAxis)
+        // 坐标轴
+        paintAxis.strokeWidth = dp(1.2f)
+        val origin = project(0.0, 0.0, 0.0)
+        val ax = project(range, 0.0, 0.0)
+        val ay = project(0.0, range, 0.0)
+        val az2 = project(0.0, 0.0, maxZ)
+        canvas.drawLine(origin.first, origin.second, ax.first, ax.second, paintAxis)
+        canvas.drawLine(origin.first, origin.second, ay.first, ay.second, paintAxis)
+        canvas.drawLine(origin.first, origin.second, az2.first, az2.second, paintAxis)
 
-        // 画曲面
+        // 曲面（按深度从远到近）
         val path = Path()
         for (q in quads) {
-            val maxZ = grid.maxOf { row -> row.maxOf { it.third } }
-            val minZ = grid.minOf { row -> row.minOf { it.third } }
-            val t = if (maxZ > minZ) ((q.z - minZ) / (maxZ - minZ)).coerceIn(0.0, 1.0) else 0.5
-            val hue = (240 - t * 240).toInt()  // 蓝(240) → 红(0)
-            val color = Color.HSVToColor(floatArrayOf(hue.toFloat(), 0.7f, 0.85f))
-            paintSurface.color = color
+            val t = ((q.z - minZ) / spanZ).coerceIn(0.0, 1.0)
+            val hue = (240.0 - t * 240.0).toFloat()   // 蓝 → 红
+            paintSurface.color = Color.HSVToColor(floatArrayOf(hue, 0.7f, 0.9f))
             path.reset()
-            path.moveTo(q.p0.px, q.p0.py)
-            path.lineTo(q.p1.px, q.p1.py)
-            path.lineTo(q.p2.px, q.p2.py)
-            path.lineTo(q.p3.px, q.p3.py)
+            path.moveTo(q.p0.first, q.p0.second)
+            path.lineTo(q.p1.first, q.p1.second)
+            path.lineTo(q.p2.first, q.p2.second)
+            path.lineTo(q.p3.first, q.p3.second)
             path.close()
             canvas.drawPath(path, paintSurface)
         }
 
         // 标题
-        paintLabel.textSize = 36f
-        canvas.drawText("z = $expr3D", 16f, 48f, paintLabel)
+        paintLabel.textSize = dp(10f)
+        val title = expr3D
+        var shown = title
+        while (paintLabel.measureText(shown) > w - dp(16f) && shown.length > 4) {
+            shown = shown.substring(0, shown.length - 1)
+        }
+        canvas.drawText("z=$shown", dp(6f), dp(14f), paintLabel)
     }
 
     private fun xToPx(x: Double, w: Float): Float =

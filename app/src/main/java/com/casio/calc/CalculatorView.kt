@@ -29,6 +29,7 @@ class CalculatorView @JvmOverloads constructor(
     private var graphView: GraphView? = null
     private var graphExpr2D: String = "sin(X)"
     private var graphExpr3D: String = "sin(sqrt(X*X+Y*Y))/(sqrt(X*X+Y*Y)+0.001)"
+    private var graph3D = false
 
     // 布局几何
     private lateinit var displayRect: RectF
@@ -212,7 +213,8 @@ class CalculatorView @JvmOverloads constructor(
             drawExpression(canvas, padL, padR)
             // 结果
             if (resultText != null) {
-                val resY = displayRect.bottom - dp(14f)
+                brushResult.textSize = dp(28f)
+                val resY = displayRect.bottom - dp(8f)
                 drawRight(canvas, resultText!!, brushResult, padL, padR, resY)
             }
         }
@@ -226,51 +228,108 @@ class CalculatorView @JvmOverloads constructor(
                 paintKey(canvas, r, key, i, j)
             }
         }
-
-        // GRAPH 模式下在按键区最右上角显示返回图标提示
-        if (state.mode == Mode.GRAPH) {
-            brushInd.textAlign = Paint.Align.LEFT
-            brushInd.textSize = dp(12f)
-            canvas.drawText("← 按菜单退出图像模式", displayRect.left + dp(8f), displayRect.bottom - dp(8f), brushInd)
-        }
     }
 
-    /** GRAPH 模式：在 LCD 显示区里画图像，按键保留 */
+    /** GRAPH 模式：仅在 LCD 显示区绘制图像（带画布平移），按键保留 */
     private fun drawGraphInDisplay(canvas: Canvas) {
-        if (graphView == null) graphView = GraphView(context)
-        val gv = graphView!!
-        gv.mode2D = true
+        val gv = graphView ?: GraphView(context).also { graphView = it }
+        gv.mode2D = !graph3D
         gv.expr2D = graphExpr2D
         gv.expr3D = graphExpr3D
-        // 让 GraphView 只占 displayRect 区域
-        gv.layout(
-            displayRect.left.toInt() + 4,
-            displayRect.top.toInt() + 4,
-            displayRect.right.toInt() - 4,
-            displayRect.bottom.toInt() - 4
-        )
+
+        val offX = displayRect.left + dp(3f)
+        val offY = displayRect.top + dp(3f)
+        val gw = (displayRect.width() - dp(6f)).toInt().coerceAtLeast(1)
+        val gh = (displayRect.height() - dp(6f)).toInt().coerceAtLeast(1)
+        gv.layout(0, 0, gw, gh)
+
+        // 背景
+        brushLcd.color = COLOR_LCD_BORDER
+        canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcd)
+
+        canvas.save()
+        canvas.translate(offX, offY)
+        canvas.clipRect(0f, 0f, gw.toFloat(), gh.toFloat())
         gv.draw(canvas)
+        canvas.restore()
+
         brushLcdBorder.color = COLOR_LCD_BORDER
         brushLcdBorder.style = Paint.Style.STROKE
         brushLcdBorder.strokeWidth = dp(2f)
         canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcdBorder)
+
+        drawGraphButtons(canvas)
+    }
+
+    /** 图像模式下叠加的小按钮：模式切换、放大、缩小、重置 */
+    private fun graphButtons(): List<Pair<String, RectF>> {
+        val size = dp(28f)
+        val gap = dp(5f)
+        val bottom = displayRect.bottom - dp(5f)
+        val top = bottom - size
+        val labels = listOf(if (graph3D) "3D" else "2D", "＋", "－", "⟲")
+        var left = displayRect.left + dp(8f)
+        val out = mutableListOf<Pair<String, RectF>>()
+        for (l in labels) {
+            out.add(l to RectF(left, top, left + size, bottom))
+            left += size + gap
+        }
+        return out
+    }
+
+    private fun drawGraphButtons(canvas: Canvas) {
+        val bg = Paint()
+        bg.color = Color.argb(170, 20, 20, 26)
+        bg.style = Paint.Style.FILL
+        val tx = Paint()
+        tx.color = Color.WHITE
+        tx.textSize = dp(12f)
+        tx.typeface = Typeface.DEFAULT_BOLD
+        tx.textAlign = Paint.Align.CENTER
+        for ((label, r) in graphButtons()) {
+            canvas.drawRoundRect(r, dp(6f), dp(6f), bg)
+            val ty = r.centerY() - (tx.ascent() + tx.descent()) / 2f
+            canvas.drawText(label, r.centerX(), ty, tx)
+        }
+    }
+
+    private fun onGraphButton(label: String) {
+        val gv = graphView ?: return
+        gv.mode2D = !graph3D
+        when (label) {
+            "2D", "3D" -> graph3D = !graph3D
+            "＋" -> gv.zoomBy(1.4)
+            "－" -> gv.zoomBy(1.0 / 1.4)
+            "⟲" -> gv.resetView()
+        }
+        invalidate()
     }
 
     /** 渲染单行表达式 + 光标 */
     private fun drawExpression(canvas: Canvas, padL: Float, padR: Float) {
         val tokens = state.tokens
-        val exprY = displayRect.top + dp(62f)
+        val exprY = displayRect.top + dp(50f)
+
+        // 关键：必须复位对齐方式，否则空表达式分支设成 RIGHT 后会让所有 token 互相压住
+        brushExprBold.textAlign = Paint.Align.LEFT
+        brushExprBold.textSize = dp(24f)
 
         if (tokens.isEmpty()) {
             brushExprBold.textAlign = Paint.Align.RIGHT
-            brushExprBold.textSize = dp(26f)
             canvas.drawText("0", padR, exprY, brushExprBold)
+            brushExprBold.textAlign = Paint.Align.LEFT
             if (cursorBlink) drawCursorAt(canvas, padR + dp(1f), exprY, brushExprBold)
             return
         }
 
-        // 单行渲染
-        val layout = drawLine(canvas, tokens, brushExprBold, padL, exprY)
+        // 自适应字号，避免超出显示区
+        val avail = padR - padL
+        val rawWidth = tokens.sumOf { brushExprBold.measureText(it.d).toDouble() }.toFloat()
+        if (avail > 0 && rawWidth > avail) {
+            brushExprBold.textSize = (dp(24f) * avail / rawWidth).coerceIn(dp(10f), dp(24f))
+        }
+
+        drawLine(canvas, tokens, brushExprBold, padL, exprY)
 
         // 光标
         if (cursorBlink) {
@@ -381,16 +440,31 @@ class CalculatorView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val x = event.x; val y = event.y
 
-        // GRAPH 模式：只有显示区的触摸转发给 GraphView，按键继续可用
-        if (state.mode == Mode.GRAPH && graphView != null && displayRect.contains(x, y)) {
-            graphView!!.onTouchEvent(event)
-            invalidate()
+        // GRAPH 模式：按钮优先，其次把显示区内的触摸（含坐标换算）交给 GraphView
+        if (state.mode == Mode.GRAPH) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                for ((label, r) in graphButtons()) {
+                    if (r.contains(x, y)) {
+                        onGraphButton(label)
+                        return true
+                    }
+                }
+            }
+            if (graphView != null && displayRect.contains(x, y)) {
+                val gv = graphView!!
+                gv.mode2D = !graph3D
+                val me = MotionEvent.obtain(event)
+                me.offsetLocation(-(displayRect.left + dp(3f)), -(displayRect.top + dp(3f)))
+                gv.onTouchEvent(me)
+                me.recycle()
+                invalidate()
+            }
             return true
         }
 
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-            // 非 GRAPH 模式：显示区点击 → 光标定位
-            if (state.mode != Mode.GRAPH && displayRect.contains(x, y)) {
+            // 显示区点击 → 光标定位
+            if (displayRect.contains(x, y)) {
                 val padL = displayRect.left + dp(14f)
                 val idx = findCursorByX(state.tokens.toList(), x, brushExprBold, padL)
                 state.cursor = idx
@@ -596,9 +670,9 @@ class CalculatorView @JvmOverloads constructor(
     private fun open2DGraph() {
         inputDialog("2D 函数表达式", "用 X 表示自变量，如 sin(X)、X^2-3*X+1") { s ->
             graphExpr2D = s.ifBlank { "sin(X)" }
+            graph3D = false
             state.mode = Mode.GRAPH
-            val gv = graphView ?: GraphView(context).also { graphView = it }
-            gv.mode2D = true
+            graphView?.mode2D = true
             invalidate()
         }
     }
@@ -606,9 +680,9 @@ class CalculatorView @JvmOverloads constructor(
     private fun open3DGraph() {
         inputDialog("3D 曲面表达式", "用 X, Y 表示自变量，如 X^2-Y^2、sin(sqrt(X*X+Y*Y))") { s ->
             graphExpr3D = s.ifBlank { "X*X-Y*Y" }
+            graph3D = true
             state.mode = Mode.GRAPH
-            val gv = graphView ?: GraphView(context).also { graphView = it }
-            gv.mode2D = false
+            graphView?.mode2D = false
             invalidate()
         }
     }
