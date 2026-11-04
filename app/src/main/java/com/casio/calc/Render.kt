@@ -93,22 +93,14 @@ class RFrac(val num: RNode, val numIndex: Int?, val den: RNode, val denIndex: In
     override fun draw(canvas: Canvas, paint: Paint) {
         val inner = Paint(paint)
         inner.textSize = paint.textSize * 0.9f
-        // 居中
-        val cx = x + width / 2f
-        num.x = cx - num.width / 2f
-        num.y = y - ascent + num.height
+        // 子节点位置已由 layoutInner 设置好，直接画
         num.draw(canvas, inner)
         // 横线
-        val oldStroke = inner.strokeWidth
-        inner.strokeWidth = paint.textSize * 0.07f
-        val oldStyle = inner.style
-        inner.style = Paint.Style.STROKE
-        val lineY = y - ascent + num.height + linePad / 2f
-        canvas.drawLine(x + 3f, lineY, x + width - 3f, lineY, inner)
-        inner.style = oldStyle
-        inner.strokeWidth = oldStroke
-        den.x = cx - den.width / 2f
-        den.y = y + descent - 3f
+        val strokePaint = Paint(paint)
+        strokePaint.style = Paint.Style.STROKE
+        strokePaint.strokeWidth = paint.textSize * 0.07f
+        val lineY = num.y + num.height / 2f + linePad / 2f
+        canvas.drawLine(x + 3f, lineY, x + width - 3f, lineY, strokePaint)
         den.draw(canvas, inner)
     }
     override fun collectBounds(map: HashMap<Int, Triple<Float, Float, Float>>) {
@@ -130,12 +122,10 @@ class RSup(val base: RNode, val baseIndex: Int?, val sup: RNode, val supIndex: I
         height = ascent + descent
     }
     override fun draw(canvas: Canvas, paint: Paint) {
-        base.x = x; base.y = y
+        // base 和 sup 的位置已由 layoutInner 设置好
         base.draw(canvas, paint)
         val small = Paint(paint)
         small.textSize = paint.textSize * 0.6f
-        sup.x = x + base.width * 0.9f
-        sup.y = y - base.ascent * 0.7f
         sup.draw(canvas, small)
     }
     override fun collectBounds(map: HashMap<Int, Triple<Float, Float, Float>>) {
@@ -157,18 +147,13 @@ class RSqrt(val body: RNode, val parenIndex: Int?) : RNode() {
         val sym = "√"
         val symPaint = Paint(paint)
         symPaint.textSize = paint.textSize * 1.15f
-        symPaint.typeface = paint.typeface
-        body.x = x + paint.measureText(sym)
-        body.y = y
-        body.draw(canvas, paint)
+        body.draw(canvas, paint)  // 位置已由 layoutInner 设置好
         canvas.drawText(sym, x, y, symPaint)
         // 上方横线（括在 body 上方）
-        val oldStroke = paint.strokeWidth
-        paint.strokeWidth = paint.textSize * 0.06f
-        val oldStyle = paint.style
-        paint.style = Paint.Style.STROKE
-        canvas.drawLine(body.x - 1f, y - ascent + 1f, x + width - 1f, y - ascent + 1f, paint)
-        paint.style = oldStyle; paint.strokeWidth = oldStroke
+        val strokePaint = Paint(paint)
+        strokePaint.style = Paint.Style.STROKE
+        strokePaint.strokeWidth = paint.textSize * 0.06f
+        canvas.drawLine(body.x - 1f, y - ascent + 1f, x + width - 1f, y - ascent + 1f, strokePaint)
     }
     override fun collectBounds(map: HashMap<Int, Triple<Float, Float, Float>>) {
         body.collectBounds(map)
@@ -192,9 +177,7 @@ class RParen(val inner: RNode, val lpIndex: Int, val rpIndex: Int) : RNode() {
         val symPaint = Paint(paint); symPaint.textSize = paint.textSize
         val lpW = symPaint.measureText("(")
         val rpW = symPaint.measureText(")")
-        inner.x = x + lpW + pad
-        inner.y = y
-        inner.draw(canvas, paint)
+        inner.draw(canvas, paint)  // 位置已由 layoutInner 设置好
         canvas.drawText("(", x + 1f, y, symPaint)
         canvas.drawText(")", x + width - rpW - 1f, y, symPaint)
     }
@@ -307,8 +290,10 @@ private fun findDivDenEnd(tokens: List<Tok>, from: Int, end: Int): Int {
 // ====================================================
 
 /**
- * 完整流程：build → measure → layout → draw → collectBounds
- * 返回的 tree 上每个 x/y/width 都设置好。
+ * 完整流程：build → measure → layout（递归设置所有内部节点坐标） → collectBounds → draw
+ *
+ * 关键：layoutInner 在 draw 之前递归设置所有嵌套节点的 x/y，
+ * 这样 collectBounds 才能拿到正确的位置信息给光标使用。
  */
 fun layoutAndRender(
     tokens: List<Tok>,
@@ -320,11 +305,54 @@ fun layoutAndRender(
     val tree = buildRenderTree(tokens)
     tree.measure(paint)
     tree.x = originX; tree.y = baselineY
-    if (tree is RRow) tree.layoutChildren(originX)
+    layoutInnerRecursive(tree, paint)
     val bounds = HashMap<Int, Triple<Float, Float, Float>>()
     tree.collectBounds(bounds)
     canvas?.let { tree.draw(it, paint) }
     return tree to bounds
+}
+
+/** 递归设置所有节点的 x/y（不画），确保 collectBounds 时位置已就绪 */
+private fun layoutInnerRecursive(node: RNode, paint: Paint) {
+    when (node) {
+        is RRow -> {
+            node.layoutChildren(node.x)
+            for (c in node.children) layoutInnerRecursive(c, paint)
+        }
+        is RFrac -> {
+            val cx = node.x + node.width / 2f
+            val innerPaint = Paint(paint).also { it.textSize = paint.textSize * 0.9f }
+            layoutInnerRecursive(node.num, innerPaint)
+            layoutInnerRecursive(node.den, innerPaint)
+            node.num.x = cx - node.num.width / 2f
+            node.num.y = node.y - node.ascent + node.num.height
+            node.den.x = cx - node.den.width / 2f
+            node.den.y = node.y + node.descent - 3f
+        }
+        is RSup -> {
+            layoutInnerRecursive(node.base, paint)
+            val small = Paint(paint).also { it.textSize = paint.textSize * 0.6f }
+            layoutInnerRecursive(node.sup, small)
+            node.base.x = node.x
+            node.base.y = node.y
+            node.sup.x = node.x + node.base.width * 0.9f
+            node.sup.y = node.y - node.base.ascent * 0.7f
+        }
+        is RSqrt -> {
+            layoutInnerRecursive(node.body, paint)
+            val symW = paint.measureText("√")
+            node.body.x = node.x + symW
+            node.body.y = node.y
+        }
+        is RParen -> {
+            val pad = 2f
+            val lpW = paint.measureText("(")
+            layoutInnerRecursive(node.inner, paint)
+            node.inner.x = node.x + lpW + pad
+            node.inner.y = node.y
+        }
+        is RAtom -> { /* 叶子，坐标已由父节点 layout */ }
+    }
 }
 
 /** 根据 touchX 反推 cursor index */
