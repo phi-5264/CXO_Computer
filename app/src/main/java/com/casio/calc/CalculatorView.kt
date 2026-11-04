@@ -193,31 +193,31 @@ class CalculatorView @JvmOverloads constructor(
 
         canvas.drawColor(COLOR_BG)
 
-        // LCD 显示屏
-        brushLcd.color = COLOR_LCD
-        canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcd)
-        brushLcdBorder.color = COLOR_LCD_BORDER
-        canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcdBorder)
+        // LCD 显示屏 —— GRAPH 模式下显示区改为函数图像
+        if (state.mode == Mode.GRAPH) {
+            drawGraphInDisplay(canvas)
+        } else {
+            brushLcd.color = COLOR_LCD
+            canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcd)
+            brushLcdBorder.color = COLOR_LCD_BORDER
+            canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcdBorder)
 
-        // 指示行
-        val padL = displayRect.left + dp(14f)
-        val padR = displayRect.right - dp(14f)
-        val ind = indicatorLine()
-        brushInd.textAlign = Paint.Align.LEFT
-        canvas.drawText(ind, padL, displayRect.top + dp(18f), brushInd)
-
-        // 表达式 —— 用 Render 树画（支持分式/幂/根号堆叠）
-        drawExpression(canvas, padL, padR)
-
-        // 结果
-        if (resultText != null) {
-            val resY = displayRect.bottom - dp(14f)
-            drawRight(canvas, resultText!!, brushResult, padL, padR, resY)
-        } else if (state.mode == Mode.GRAPH && graphView != null) {
-            // GRAPH 模式下结果区域空着
+            val padL = displayRect.left + dp(14f)
+            val padR = displayRect.right - dp(14f)
+            // 指示行
+            val ind = indicatorLine()
+            brushInd.textAlign = Paint.Align.LEFT
+            canvas.drawText(ind, padL, displayRect.top + dp(18f), brushInd)
+            // 表达式 + 光标
+            drawExpression(canvas, padL, padR)
+            // 结果
+            if (resultText != null) {
+                val resY = displayRect.bottom - dp(14f)
+                drawRight(canvas, resultText!!, brushResult, padL, padR, resY)
+            }
         }
 
-        // 按键
+        // 按键始终可见
         for (i in Keypad.rows.indices) {
             val keys = Keypad.rows[i]
             for (j in keys.indices) {
@@ -227,70 +227,65 @@ class CalculatorView @JvmOverloads constructor(
             }
         }
 
-        // 如果在 GRAPH 模式，覆盖底部画一个小 GraphView（弹窗式）
+        // GRAPH 模式下在按键区最右上角显示返回图标提示
         if (state.mode == Mode.GRAPH) {
-            drawGraphOverlay(canvas)
+            brushInd.textAlign = Paint.Align.LEFT
+            brushInd.textSize = dp(12f)
+            canvas.drawText("← 按菜单退出图像模式", displayRect.left + dp(8f), displayRect.bottom - dp(8f), brushInd)
         }
     }
 
-    private var graphVisible = false
-    private fun drawGraphOverlay(canvas: Canvas) {
-        // GRAPH 模式下：让 GraphView 完全覆盖整个 Canvas
+    /** GRAPH 模式：在 LCD 显示区里画图像，按键保留 */
+    private fun drawGraphInDisplay(canvas: Canvas) {
         if (graphView == null) graphView = GraphView(context)
         val gv = graphView!!
         gv.mode2D = true
         gv.expr2D = graphExpr2D
         gv.expr3D = graphExpr3D
-        // 直接把 gv 画到 canvas 上 —— 但 GraphView 需要被 attach 才能正常测量
-        // 简化：在 GRAPH 模式下全屏显示 GraphView
-        val gRect = RectF(0f, 0f, width.toFloat(), height.toFloat())
-        gv.layout(0, 0, width, height)
+        // 让 GraphView 只占 displayRect 区域
+        gv.layout(
+            displayRect.left.toInt() + 4,
+            displayRect.top.toInt() + 4,
+            displayRect.right.toInt() - 4,
+            displayRect.bottom.toInt() - 4
+        )
         gv.draw(canvas)
+        brushLcdBorder.color = COLOR_LCD_BORDER
+        brushLcdBorder.style = Paint.Style.STROKE
+        brushLcdBorder.strokeWidth = dp(2f)
+        canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcdBorder)
     }
 
-    /** 渲染表达式 + 光标 */
+    /** 渲染表达式 + 光标（稳定版：先 measure 再 layout 再 draw） */
     private fun drawExpression(canvas: Canvas, padL: Float, padR: Float) {
         val tokens = state.tokens
-        val exprY = displayRect.top + dp(46f)
-        val avail = padR - padL
+        val exprY = displayRect.top + dp(62f)
 
         if (tokens.isEmpty()) {
             brushExprBold.textAlign = Paint.Align.RIGHT
+            brushExprBold.textSize = dp(26f)
             canvas.drawText("0", padR, exprY, brushExprBold)
-            // 光标
-            if (cursorBlink) {
-                brushCursor.strokeWidth = dp(2f)
-                canvas.drawLine(padR + dp(1f), exprY - brushExpr.ascent(), padR + dp(1f), exprY + brushExpr.descent(), brushCursor)
-            }
+            if (cursorBlink) drawCursorAt(canvas, padR + dp(1f), exprY, brushExprBold)
             return
         }
 
-        // 构建 Render 树
-        val tree = buildRenderTree(tokens, 0, tokens.size)
-        tree.x = padL
-        tree.y = exprY
-        tree.draw(canvas, brushExprBold)
-
-        // 如果超出，缩小字体
-        if (tree.width > avail) {
-            // 简单缩放：先清空再用更小的 paint 重画
-            // 直接用 brushExpr（略小）重画
-            canvas.save()
-            brushExpr.textSize = dp(22f)
-            brushExprBold.textSize = dp(22f)
-            tree.x = padL; tree.y = exprY
-            tree.draw(canvas, brushExprBold)
-            canvas.restore()
-        }
+        // 稳定的三步流程
+        val (tree, _) = layoutAndRender(tokens, brushExprBold, padL, exprY, canvas)
 
         // 光标
         if (cursorBlink) {
-            val cx = computeCursorX(tokens, state.cursor, brushExprBold, padL, exprY, avail)
-            val top = exprY - brushExprBold.ascent() - dp(2f)
-            val bot = exprY + brushExprBold.descent() + dp(2f)
-            brushCursor.strokeWidth = dp(2f)
-            canvas.drawLine(cx, top, cx, bot, brushCursor)
+            val cx = computeCursorX(tokens, state.cursor, brushExprBold, padL, exprY)
+            drawCursorAt(canvas, cx, exprY, brushExprBold)
         }
+    }
+
+    private fun drawCursorAt(canvas: Canvas, cx: Float, baseline: Float, paint: Paint) {
+        brushCursor.strokeWidth = dp(2f)
+        canvas.drawLine(
+            cx, baseline - paint.ascent() - dp(1f),
+            cx, baseline + paint.descent() + dp(1f),
+            brushCursor
+        )
     }
 
     /** 绘制单个按键（美化版） */
@@ -384,30 +379,26 @@ class CalculatorView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val x = event.x; val y = event.y
+
+        // GRAPH 模式：只有显示区的触摸转发给 GraphView，按键继续可用
+        if (state.mode == Mode.GRAPH && graphView != null && displayRect.contains(x, y)) {
+            graphView!!.onTouchEvent(event)
+            invalidate()
+            return true
+        }
+
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-            val x = event.x; val y = event.y
-            // GRAPH 模式下把事件交给 GraphView
-            if (state.mode == Mode.GRAPH && graphView != null) {
-                graphView!!.onTouchEvent(event)
-                invalidate()
-                return true
-            }
-            // 先检查显示区 → 光标定位
-            if (displayRect.contains(x, y)) {
-                // 根据 x 计算光标位置
+            // 非 GRAPH 模式：显示区点击 → 光标定位
+            if (state.mode != Mode.GRAPH && displayRect.contains(x, y)) {
                 val padL = displayRect.left + dp(14f)
-                val padR = displayRect.right - dp(14f)
-                val exprY = displayRect.top + dp(46f)
-                val idx = findCursorByX(
-                    state.tokens.toList(), x, brushExprBold, padL, exprY
-                )
+                val exprY = displayRect.top + dp(62f)
+                val idx = findCursorByX(state.tokens.toList(), x, brushExprBold, padL, exprY)
                 state.cursor = idx
-                // 如果点的是上半部分 → 上移一个字符；下半部分 → 下移一个字符
-                // 简化：点左侧 → 左移；点右侧 → 右移（或者直接 setCursor）
                 invalidate()
                 return true
             }
-            // 否则按键
+            // 按键命中测试
             for (i in keyRects.indices) {
                 val rects = keyRects[i]
                 for (j in rects.indices) {
@@ -417,11 +408,6 @@ class CalculatorView @JvmOverloads constructor(
                     }
                 }
             }
-        }
-        // GRAPH 模式：MOVE/UPCANCEL 也转发
-        if (state.mode == Mode.GRAPH && graphView != null) {
-            graphView!!.onTouchEvent(event)
-            invalidate()
         }
         return true
     }
