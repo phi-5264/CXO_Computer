@@ -22,8 +22,9 @@ object Keypad {
             k("SHIFT", "shift"),
             k("ALPHA", "alpha"),
             k("菜单", "mode"),
-            k("设置", "setup"),
-            k("Ans", "Ans", "PreAns", "PreAns"),
+            k("字母", "abc"),
+            k("X", "X"),
+            k("Y", "Y"),
             k("AC", "ac")
         ),
         listOf(
@@ -54,7 +55,7 @@ object Keypad {
             k("nCr", "ncr"),
             k("nPr", "npr"),
             k("%", "percent", "x!", "fact", "M", "M"),
-            k("i", "i"),
+            k("i", "i", "∠", "angle"),
             k("(−)", "neg", alpha = "F", alphaAction = "F"),
             k("×10ˣ", "exp")
         ),
@@ -82,6 +83,7 @@ object Keypad {
         listOf(
             k("0", "0"),
             k(".", "dot"),
+            k("Ans", "Ans", "PreAns", "PreAns"),
             k("STO", "sto"),
             k("RCL", "rcl"),
             k("=", "eq")

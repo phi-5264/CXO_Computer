@@ -5,10 +5,14 @@ import kotlin.math.*
 /** 显示格式 */
 enum class DispMode { NORM, FIX, SCI, ENG }
 
+/** 复数显示形式 */
+enum class ComplexForm { RECT, POLAR }
+
 class CalcConfig {
     var dispMode: DispMode = DispMode.NORM
     var digits: Int = 2          // FIX: 小数位, SCI: 有效位
     var angle: AngleMode = AngleMode.DEG
+    var complexForm: ComplexForm = ComplexForm.RECT
 }
 
 enum class AngleMode { DEG, RAD, GRA }
@@ -84,8 +88,25 @@ object Fmt {
         return t
     }
 
-    /** 复数显示：a+bi, a-bi, a, bi */
-    fun complex(c: Complex, cfg: CalcConfig): String {
+    /** 极坐标显示：r∠θ（θ 跟随当前角度制） */
+    fun polar(c: Complex, cfg: CalcConfig): String {
+        val r = c.absv()
+        val a = c.arg()
+        val th = when (cfg.angle) {
+            AngleMode.DEG -> Math.toDegrees(a)
+            AngleMode.RAD -> a
+            AngleMode.GRA -> a * 200.0 / PI
+        }
+        val unit = when (cfg.angle) {
+            AngleMode.DEG -> "°"
+            AngleMode.RAD -> " rad"
+            AngleMode.GRA -> "g"
+        }
+        return real(r, cfg) + "∠" + real(th, cfg) + unit
+    }
+
+    /** 直角坐标形式：a+bi, a-bi, a, bi */
+    fun rect(c: Complex, cfg: CalcConfig): String {
         val re = c.re
         val im = tidy(c.im)
         if (abs(im) < 1e-12) return real(re, cfg)
@@ -97,5 +118,20 @@ object Fmt {
         val r = real(re, cfg)
         val sign = if (im < 0) "-" else "+"
         return "$r$sign${coeff}i"
+    }
+
+    /** 复数显示（按 cfg.complexForm 选主形式） */
+    fun complex(c: Complex, cfg: CalcConfig): String {
+        if (cfg.complexForm == ComplexForm.POLAR && abs(c.im) >= 1e-12) return polar(c, cfg)
+        return rect(c, cfg)
+    }
+
+    /** 双形式显示：主形式 + 括号内附另一种形式（仅含虚部时） */
+    fun both(c: Complex, cfg: CalcConfig): String {
+        if (abs(c.im) < 1e-12) return rect(c, cfg)
+        return if (cfg.complexForm == ComplexForm.POLAR)
+            "${polar(c, cfg)}  (${rect(c, cfg)})"
+        else
+            "${rect(c, cfg)}  (${polar(c, cfg)})"
     }
 }

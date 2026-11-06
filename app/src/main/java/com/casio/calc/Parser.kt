@@ -52,6 +52,12 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
                         else -> left
                     }
                 }
+                t is AngleTok -> {
+                    // 极坐标：a∠θ = a * (cosθ + i·sinθ)，θ 按当前角度制
+                    next()
+                    val ang = parseUnary()
+                    left = left * polarUnit(ang)
+                }
                 isImplicitStart(t) -> {
                     val right = parseUnary()
                     left = left * right
@@ -60,6 +66,15 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
             }
         }
         return left
+    }
+
+    private fun polarUnit(a: Complex): Complex {
+        val rad = when (ctx.cfg.angle) {
+            AngleMode.DEG -> realOnly(a) { it * PI / 180.0 }
+            AngleMode.RAD -> realOnly(a) { it }
+            AngleMode.GRA -> realOnly(a) { it * PI / 200.0 }
+        }
+        return Complex(cos(rad.re), sin(rad.re))
     }
 
     private fun isImplicitStart(t: Tok?): Boolean = when (t) {
@@ -145,7 +160,7 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         "ln" -> a.ln()
         "sqrt" -> a.sqrt()
         "cbrt" -> cbrt(a)
-        "exp" -> a.exp()
+        "ex", "exp" -> a.exp()
         "tenx" -> (Complex.fromReal(ln(10.0)) * a).exp()
         "abs" -> Complex.fromReal(a.absv())
         "arg" -> Complex.fromReal(a.arg())
@@ -163,11 +178,11 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
     }
 
     private fun applyPostfix(v: Complex, op: String): Complex = when (op) {
-        "²" -> v * v
-        "³" -> v * v * v
-        "⁻¹" -> Complex.ONE / v
-        "%" -> v / Complex.fromReal(100.0)
-        "!" -> Complex.fromReal(factorialGamma(v))
+        "sq" -> v * v
+        "cube" -> v * v * v
+        "inv" -> Complex.ONE / v
+        "percent" -> v / Complex.fromReal(100.0)
+        "fact" -> Complex.fromReal(factorialGamma(v))
         else -> v
     }
 

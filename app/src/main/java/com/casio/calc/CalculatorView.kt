@@ -23,13 +23,23 @@ class CalculatorView @JvmOverloads constructor(
     private var justEvaluated = false
 
     private val matrices = mutableMapOf<String, Matrix>()
-    private val vectors = mutableMapOf<String, DoubleArray>()
+    private val vectors = mutableMapOf<String, Vector>()
 
     // GRAPH 模式
     private var graphView: GraphView? = null
-    private var graphExpr2D: String = "sin(X)"
-    private var graphExpr3D: String = "sin(sqrt(X*X+Y*Y))/(sqrt(X*X+Y*Y)+0.001)"
+    private var graphFuncs = mutableListOf(
+        FuncItem("sin(X)", true, GraphView.PALETTE[0]),
+    )
     private var graph3D = false
+    /** 3D 模式表达式（同步到 graphFuncs[0].expr） */
+    private var graph3DExpr = "sin(sqrt(X*X+Y*Y))/(sqrt(X*X+Y*Y)+0.001)"
+    /** GRAPH 子状态：true=编辑表达式（用本机数学键盘），false=绘图 */
+    private var graphEditing = true
+    /** 当前正在编辑的函数索引（2D 模式） */
+    private var graphEditingIdx = 0
+
+    /** GRAPH 显示区短按追踪 */
+    private var graphDownX = 0f; private var graphDownY = 0f; private var graphDownTime = 0L
 
     // 布局几何
     private lateinit var displayRect: RectF
@@ -194,8 +204,8 @@ class CalculatorView @JvmOverloads constructor(
 
         canvas.drawColor(COLOR_BG)
 
-        // LCD 显示屏 —— GRAPH 模式下显示区改为函数图像
-        if (state.mode == Mode.GRAPH) {
+        // LCD 显示屏 —— GRAPH 绘图状态下显示区改为函数图像；编辑状态仍为表达式
+        if (state.mode == Mode.GRAPH && !graphEditing) {
             drawGraphInDisplay(canvas)
         } else {
             brushLcd.color = COLOR_LCD
@@ -230,12 +240,10 @@ class CalculatorView @JvmOverloads constructor(
         }
     }
 
-    /** GRAPH 模式：仅在 LCD 显示区绘制图像（带画布平移），按键保留 */
+    /** GRAPH 模式：在 LCD 显示区绘制图像（多函数叠加），按键保留 */
     private fun drawGraphInDisplay(canvas: Canvas) {
         val gv = graphView ?: GraphView(context).also { graphView = it }
-        gv.mode2D = !graph3D
-        gv.expr2D = graphExpr2D
-        gv.expr3D = graphExpr3D
+        syncGraphView(gv)
 
         val offX = displayRect.left + dp(3f)
         val offY = displayRect.top + dp(3f)
@@ -243,7 +251,6 @@ class CalculatorView @JvmOverloads constructor(
         val gh = (displayRect.height() - dp(6f)).toInt().coerceAtLeast(1)
         gv.layout(0, 0, gw, gh)
 
-        // 背景
         brushLcd.color = COLOR_LCD_BORDER
         canvas.drawRoundRect(displayRect, dp(10f), dp(10f), brushLcd)
 
@@ -261,13 +268,25 @@ class CalculatorView @JvmOverloads constructor(
         drawGraphButtons(canvas)
     }
 
-    /** 图像模式下叠加的小按钮：模式切换、放大、缩小、重置 */
+    /** 把 graphFuncs/graph3D/视角同步到 GraphView */
+    private fun syncGraphView(gv: GraphView) {
+        gv.funcs.clear()
+        gv.mode2D = !graph3D
+        if (graph3D) {
+            gv.funcs.add(FuncItem(graph3DExpr, true, GraphView.PALETTE[0]))
+        } else {
+            gv.funcs.addAll(graphFuncs)
+        }
+        gv.invalidate()
+    }
+
+    /** 图像模式下叠加的小按钮：模式切换、放大、缩小、重置、编辑表达式、退出 */
     private fun graphButtons(): List<Pair<String, RectF>> {
         val size = dp(28f)
         val gap = dp(5f)
         val bottom = displayRect.bottom - dp(5f)
         val top = bottom - size
-        val labels = listOf(if (graph3D) "3D" else "2D", "＋", "－", "⟲")
+        val labels = listOf(if (graph3D) "3D" else "2D", "＋", "－", "⟲", "✎", "✕")
         var left = displayRect.left + dp(8f)
         val out = mutableListOf<Pair<String, RectF>>()
         for (l in labels) {
@@ -297,11 +316,63 @@ class CalculatorView @JvmOverloads constructor(
         val gv = graphView ?: return
         gv.mode2D = !graph3D
         when (label) {
-            "2D", "3D" -> graph3D = !graph3D
+            "2D", "3D" -> { graph3D = !graph3D; gv.mode2D = !graph3D }
             "＋" -> gv.zoomBy(1.4)
             "－" -> gv.zoomBy(1.0 / 1.4)
             "⟲" -> gv.resetView()
+            "✎" -> enterGraphEditing()          // 回编辑状态，表达式保留
+            "✕" -> exitGraph()                  // 退出图像模式
         }
+        invalidate()
+    }
+
+    /** 进入 GRAPH 编辑状态：把当前函数 tokens 放进编辑缓冲，用本机数学键盘编辑 */
+    private fun enterGraphEditing() {
+        state.mode = Mode.GRAPH
+        graphEditing = true
+        val gv = graphView ?: GraphView(context).also { graphView = it }
+        val expr = if (graph3D) graph3DExpr else graphFuncs.getOrNull(graphEditingIdx)?.expr ?: "sin(X)"
+        val cur = GraphView.tokenize(expr)
+        state.tokens.clear()
+        state.tokens.addAll(cur)
+        state.cursor = state.tokens.size
+        resultText = null
+        justEvaluated = false
+        toast("用本机键盘输入，按 = 绘图")
+        invalidate()
+    }
+
+    /** 编辑状态按 = 确认表达式并绘图 */
+    private fun confirmGraphExpr() {
+        val gv = graphView ?: GraphView(context).also { graphView = it }
+        var toks = state.tokens.toList()
+        if (toks.isEmpty()) {
+            val fallback = if (graph3D) graph3DExpr else graphFuncs.getOrNull(graphEditingIdx)?.expr ?: "sin(X)"
+            toks = GraphView.tokenize(fallback)
+            state.tokens.clear(); state.tokens.addAll(toks); state.cursor = toks.size
+        }
+        val text = toks.joinToString("") { it.d }
+        if (graph3D) {
+            graph3DExpr = text
+        } else {
+            if (graphFuncs.isEmpty()) graphFuncs.add(FuncItem(text, true, GraphView.PALETTE[0]))
+            else {
+                val idx = graphEditingIdx.coerceIn(0, graphFuncs.size - 1)
+                graphFuncs[idx] = graphFuncs[idx].copy(expr = text)
+            }
+        }
+        syncGraphView(gv)
+        graphEditing = false
+        resultText = null
+        invalidate()
+    }
+
+    /** 退出图像模式，回到 COMP */
+    private fun exitGraph() {
+        state.mode = Mode.COMP
+        graphEditing = true
+        state.clearAll()
+        resultText = null
         invalidate()
     }
 
@@ -376,17 +447,17 @@ class CalculatorView @JvmOverloads constructor(
             "eq" -> brushPrimary.textSize = dp(24f)
             "ac" -> brushPrimary.textSize = dp(20f)
             "del" -> brushPrimary.textSize = dp(20f)
+            "shift", "alpha" -> brushPrimary.textSize = dp(13f)
+            "abc" -> brushPrimary.textSize = dp(15f)
+            "mode" -> brushPrimary.textSize = dp(15f)
             in listOf("7","8","9","4","5","6","1","2","3","0") -> brushPrimary.textSize = dp(22f)
             else -> brushPrimary.textSize = dp(17f)
         }
 
-        // 数字键字更大更粗
-        val text = if (row == 8 && col == 4) "=" else key.primary
         // 上下居中
         val textHeight = brushPrimary.descent() - brushPrimary.ascent()
         val topPos = cy - textHeight / 2f - brushPrimary.ascent()
-        canvas.drawText(text, cx, topPos, brushPrimary)
-
+        canvas.drawText(key.primary, cx, topPos, brushPrimary)
         // SHIFT 标签（左上）
         if (key.shift.isNotEmpty()) {
             brushShift.textAlign = Paint.Align.LEFT
@@ -423,7 +494,7 @@ class CalculatorView @JvmOverloads constructor(
             Mode.BASEN -> "BASE-N"
             Mode.UNIT -> "UNIT"
             Mode.CONST -> "CONST"
-            Mode.GRAPH -> "GRAPH"
+            Mode.GRAPH -> if (graphEditing) "GRAPH✎(=绘图)" else "GRAPH"
         }
         val ang = when (state.cfg.angle) {
             AngleMode.DEG -> "D"
@@ -440,13 +511,26 @@ class CalculatorView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val x = event.x; val y = event.y
 
-        // GRAPH 模式：按钮优先，其次把显示区内的触摸（含坐标换算）交给 GraphView
-        if (state.mode == Mode.GRAPH) {
+        // GRAPH 绘图状态：悬浮按钮优先；按键区仍可用（MODE 弹菜单，其他输入键自动回编辑）；显示区触摸转发给 GraphView
+        if (state.mode == Mode.GRAPH && !graphEditing) {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                graphDownX = x; graphDownY = y; graphDownTime = event.eventTime
                 for ((label, r) in graphButtons()) {
                     if (r.contains(x, y)) {
                         onGraphButton(label)
                         return true
+                    }
+                }
+                // 按键区：MODE 直接弹出菜单（可切换模式退出），其他输入键先回编辑再执行
+                for (i in keyRects.indices) {
+                    val rects = keyRects[i]
+                    for (j in rects.indices) {
+                        if (rects[j].contains(x, y)) {
+                            val key = Keypad.rows[i][j]
+                            if (key.action != "mode") enterGraphEditing()
+                            onKey(key)
+                            return true
+                        }
                     }
                 }
             }
@@ -455,9 +539,16 @@ class CalculatorView @JvmOverloads constructor(
                 gv.mode2D = !graph3D
                 val me = MotionEvent.obtain(event)
                 me.offsetLocation(-(displayRect.left + dp(3f)), -(displayRect.top + dp(3f)))
-                gv.onTouchEvent(me)
+                val handled = gv.onTouchEvent(me)
                 me.recycle()
-                invalidate()
+                // 短按弹全屏（ACTION_UP 且没拖拽）
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    val dx = x - graphDownX; val dy = y - graphDownY
+                    if (dx * dx + dy * dy < dp(10f) * dp(10f) && event.eventTime - graphDownTime < 300) {
+                        showFullscreenGraph()
+                    }
+                }
+                if (handled) invalidate()
             }
             return true
         }
@@ -468,6 +559,7 @@ class CalculatorView @JvmOverloads constructor(
                 val padL = displayRect.left + dp(14f)
                 val idx = findCursorByX(state.tokens.toList(), x, brushExprBold, padL)
                 state.cursor = idx
+                justEvaluated = false
                 invalidate()
                 return true
             }
@@ -528,20 +620,24 @@ class CalculatorView @JvmOverloads constructor(
             act == "exp" -> { startFreshIfNeeded(); state.inputExp(); clearResult() }
             act == "del" -> { justEvaluated = false; state.backspace(); clearResult() }
             act == "ac" -> { state.clearAll(); state.cursor = 0; resultText = null; justEvaluated = false }
-            act == "left" -> state.moveCursorLeft()
-            act == "right" -> state.moveCursorRight()
-            act == "eq" -> evaluate()
+            act == "left" -> { justEvaluated = false; state.moveCursorLeft() }
+            act == "right" -> { justEvaluated = false; state.moveCursorRight() }
+            act == "eq" -> {
+                if (state.mode == Mode.GRAPH && graphEditing) confirmGraphExpr()
+                else evaluate()
+            }
+            act == "abc" -> showLetterMenu()
             act == "Ans" -> { startFreshIfNeeded(); state.inputVar("Ans"); clearResult() }
             act == "PreAns" -> { startFreshIfNeeded(); state.inputVar("PreAns"); clearResult() }
             act == "pi" -> { startFreshIfNeeded(); state.inputConst("pi"); clearResult() }
             act == "e" -> { startFreshIfNeeded(); state.inputConst("e"); clearResult() }
             act == "i" -> { startFreshIfNeeded(); state.inputImag(); clearResult() }
+            act == "angle" -> { startFreshIfNeeded(); state.inputAngle(); clearResult() }
             act == "mplus" -> memoryAdd(true)
             act == "mminus" -> memoryAdd(false)
             act == "sto" -> showStoreDialog()
             act == "rcl" -> showRecallDialog()
             act == "mode" -> showModeMenu()
-            act == "setup" -> showSetupMenu()
             funcs.containsKey(act) -> { startFreshIfNeeded(); state.inputFunc(act, funcs[act]!!); clearResult() }
             posts.containsKey(act) -> { startFreshIfNeeded(); state.inputPostfix(act, posts[act]!!); clearResult() }
             act in varLetters -> { startFreshIfNeeded(); state.inputVar(act); clearResult() }
@@ -551,7 +647,9 @@ class CalculatorView @JvmOverloads constructor(
 
     private fun evaluate() {
         try {
-            resultText = state.evaluate(); justEvaluated = true
+            val v = if (state.tokens.isEmpty()) state.ans else state.evaluateValue()
+            resultText = Fmt.both(v, state.cfg)
+            justEvaluated = true
         } catch (e: Exception) {
             resultText = e.message?.let { if (it.isEmpty()) "ERROR" else it } ?: "ERROR"
             justEvaluated = false
@@ -611,31 +709,32 @@ class CalculatorView @JvmOverloads constructor(
     // ============ 存储 / 调取 ============
 
     private fun showStoreDialog() {
-        val names = listOf("A", "B", "C", "D", "E", "F", "X", "Y", "M")
+        val names = listOf("A", "B", "C", "D", "E", "F", "X", "Y", "M", "VctA", "VctB", "VctC")
         listDialog("STO 存入变量", names) { i ->
             val v = if (state.tokens.isEmpty()) state.ans else {
                 try { Parser(state.tokens.toList(), EvalCtx(state.buildVars(), state.cfg)).evaluate() }
                 catch (e: Exception) { state.ans }
             }
             state.storeVar(names[i], v)
+            if (names[i].startsWith("Vct")) vectors[names[i].removePrefix("Vct")] = Vector.fromComplex(v)
             resultText = Fmt.complex(v, state.cfg)
             justEvaluated = true; invalidate()
         }
     }
 
     private fun showRecallDialog() {
-        val names = listOf("A", "B", "C", "D", "E", "F", "X", "Y", "M")
+        val names = listOf("A", "B", "C", "D", "E", "F", "X", "Y", "M", "VctA", "VctB", "VctC")
         listDialog("RCL 调取变量", names) { i ->
             startFreshIfNeeded(); state.inputVar(names[i]); clearResult(); invalidate()
         }
     }
 
-    // ============ 模式菜单 ============
+    // ============ 模式菜单（合并原 SETUP） ============
 
     private fun showModeMenu() {
         val items = listOf(
             "1: 计算 COMP",
-            "2: 复数 a+bi (COMP, i 直接可用)",
+            "2: 复数 a+bi",
             "3: 统计 STAT",
             "4: 方程 EQN",
             "5: 矩阵 MATRIX",
@@ -643,9 +742,17 @@ class CalculatorView @JvmOverloads constructor(
             "7: 进制转换 BASE-N",
             "8: 单位换算 UNIT",
             "9: 科学常数 CONST",
-            "10: 函数图像 GRAPH (2D/3D)"
+            "10: 函数图像 GRAPH (2D/3D)",
+            "── 设置 ──",
+            "角度: 度 DEG   (当前 ${angleLabel()})",
+            "角度: 弧度 RAD",
+            "角度: 百分度 GRA",
+            "显示: 常规 Norm",
+            "显示: 固定小数 Fix",
+            "显示: 科学计数 Sci",
+            "复数显示: ${complexFormLabel()}（点按切换）"
         )
-        listDialog("模式菜单", items) { i ->
+        listDialog("菜单 / 设置", items) { i ->
             when (i) {
                 0, 1 -> state.mode = Mode.COMP
                 2 -> { state.mode = Mode.STAT; showStatMenu() }
@@ -656,56 +763,221 @@ class CalculatorView @JvmOverloads constructor(
                 7 -> { state.mode = Mode.UNIT; showUnitCatMenu() }
                 8 -> { state.mode = Mode.CONST; showConstList() }
                 9 -> { state.mode = Mode.GRAPH; showGraphMenu() }
+                10 -> {}
+                11 -> state.cfg.angle = AngleMode.DEG
+                12 -> state.cfg.angle = AngleMode.RAD
+                13 -> state.cfg.angle = AngleMode.GRA
+                14 -> state.cfg.dispMode = DispMode.NORM
+                15 -> fixDigits()
+                16 -> sciDigits()
+                17 -> state.cfg.complexForm =
+                    if (state.cfg.complexForm == ComplexForm.RECT) ComplexForm.POLAR else ComplexForm.RECT
             }
             invalidate()
         }
     }
+
+    private fun complexFormLabel(): String = when (state.cfg.complexForm) {
+        ComplexForm.RECT -> "直角 a+bi"
+        ComplexForm.POLAR -> "极坐标 r∠θ"
+    }
+
+    private fun angleLabel(): String = when (state.cfg.angle) {
+        AngleMode.DEG -> "DEG"; AngleMode.RAD -> "RAD"; AngleMode.GRA -> "GRA"
+    }
+
+    // ============ 字母 / 函数选择器（屏幕键盘直接输公式） ============
+
+    /** "字母" 键：先选字母 A–Z，或选函数名（sin、arcsin…）直接插入整词 */
+    private fun showLetterMenu() {
+        listDialog("输入字母 / 函数", listOf("字母 A–Z（含 X、Y）", "函数 sin cos arcsin …")) { i ->
+            if (i == 0) showLetterGrid() else showFuncPicker()
+        }
+    }
+
+    private fun showLetterGrid() {
+        val letters = ('A'..'Z').map { it.toString() }
+        listDialog("选择字母", letters) { i ->
+            startFreshIfNeeded()
+            state.inputVar(letters[i])
+            clearResult()
+            invalidate()
+        }
+    }
+
+    /** 函数名 → 内部函数标识（arcsin 与 asin 等价） */
+    private val funcPicker = listOf(
+        "sin" to "sin", "cos" to "cos", "tan" to "tan",
+        "arcsin" to "asin", "arccos" to "acos", "arctan" to "atan",
+        "sinh" to "sinh", "cosh" to "cosh", "tanh" to "tanh",
+        "arsinh" to "asinh", "arcosh" to "acosh", "artanh" to "atanh",
+        "ln" to "ln", "log" to "log", "√" to "sqrt", "³√" to "cbrt",
+        "Abs" to "abs", "Exp" to "exp", "10^" to "tenx", "e^" to "ex"
+    )
+
+    private fun showFuncPicker() {
+        listDialog("选择函数", funcPicker.map { it.first }) { i ->
+            startFreshIfNeeded()
+            val (label, fn) = funcPicker[i]
+            state.inputFunc(fn, label)
+            clearResult()
+            invalidate()
+        }
+    }
+
 
     private fun showGraphMenu() {
-        listDialog("函数图像", listOf("2D: y = f(X)", "3D: z = f(X,Y)")) { i ->
-            if (i == 0) open2DGraph() else open3DGraph()
-        }
-    }
-
-    private fun open2DGraph() {
-        inputDialog("2D 函数表达式", "用 X 表示自变量，如 sin(X)、X^2-3*X+1") { s ->
-            graphExpr2D = s.ifBlank { "sin(X)" }
-            graph3D = false
-            state.mode = Mode.GRAPH
-            graphView?.mode2D = true
-            invalidate()
-        }
-    }
-
-    private fun open3DGraph() {
-        inputDialog("3D 曲面表达式", "用 X, Y 表示自变量，如 X^2-Y^2、sin(sqrt(X*X+Y*Y))") { s ->
-            graphExpr3D = s.ifBlank { "X*X-Y*Y" }
-            graph3D = true
-            state.mode = Mode.GRAPH
-            graphView?.mode2D = false
-            invalidate()
-        }
-    }
-
-    // ============ 设置 ============
-
-    private fun showSetupMenu() {
-        val items = listOf(
-            "角度单位: 度 DEG", "角度单位: 弧度 RAD", "角度单位: 百分度 GRA",
-            "显示格式: 常规 Norm", "显示格式: 固定小数 Fix", "显示格式: 科学计数 Sci"
-        )
-        listDialog("设置", items) { i ->
-            when (i) {
-                0 -> state.cfg.angle = AngleMode.DEG
-                1 -> state.cfg.angle = AngleMode.RAD
-                2 -> state.cfg.angle = AngleMode.GRA
-                3 -> state.cfg.dispMode = DispMode.NORM
-                4 -> fixDigits()
-                5 -> sciDigits()
+        if (graph3D) {
+            // 3D 模式只有一条表达式
+            listDialog("GRAPH 3D", listOf(
+                "切换到 2D 模式",
+                "编辑 z=f(X,Y)（=绘图）",
+                "全屏显示",
+                "重置视角 ⟲",
+                "退出 GRAPH")
+            ) { i ->
+                when (i) {
+                    0 -> { graph3D = false; showGraphMenu() }
+                    1 -> enterGraphEditing()
+                    2 -> showFullscreenGraph()
+                    3 -> { graphView?.resetView(); invalidate() }
+                    4 -> exitGraph()
+                }
             }
-            invalidate()
+            return
+        }
+        // 2D 模式：多函数管理
+        val items = mutableListOf(
+            "切换到 3D 模式",
+            "＋ 新增函数 (最多10条)",
+            "全屏显示（点画面也可）",
+            "重置视角 ⟲",
+            "退出 GRAPH",
+        )
+        for ((idx, f) in graphFuncs.withIndex()) {
+            val mark = if (f.enabled) "√" else "×"
+            items.add("[$mark] f${idx + 1}(X) = ${f.expr}")
+        }
+        listDialog("GRAPH 2D（${graphFuncs.size}/10）", items) { i ->
+            when (i) {
+                0 -> { graph3D = true; showGraphMenu() }
+                1 -> addGraphFunc()
+                2 -> showFullscreenGraph()
+                3 -> { graphView?.resetView(); invalidate() }
+                4 -> exitGraph()
+                else -> {
+                    val idx = i - 5
+                    if (idx in graphFuncs.indices) showGraphFuncActions(idx)
+                }
+            }
         }
     }
+
+    private fun addGraphFunc() {
+        if (graphFuncs.size >= 10) { toast("最多 10 条函数"); return }
+        val newIdx = graphFuncs.size
+        graphFuncs.add(FuncItem("X", true, GraphView.PALETTE[newIdx]))
+        graphEditingIdx = newIdx
+        graph3D = false
+        enterGraphEditing()
+    }
+
+    private fun showGraphFuncActions(idx: Int) {
+        val f = graphFuncs[idx]
+        val items = listOf(
+            if (f.enabled) "禁用" else "启用",
+            "编辑 f${idx + 1}",
+            if (graphFuncs.size > 1) "删除 f${idx + 1}" else null,
+        ).filterNotNull()
+        listDialog("f${idx + 1}(X)", items) { i ->
+            when (i) {
+                0 -> { graphFuncs[idx] = f.copy(enabled = !f.enabled); invalidate() }
+                1 -> { graphEditingIdx = idx; enterGraphEditing() }
+                2 -> {
+                    graphFuncs.removeAt(idx)
+                    if (graphFuncs.isEmpty()) graphFuncs.add(FuncItem("X", true, GraphView.PALETTE[0]))
+                    graphEditingIdx = graphEditingIdx.coerceIn(0, graphFuncs.size - 1)
+                    invalidate()
+                }
+            }
+        }
+    }
+
+    // ============ 全屏图像 ============
+
+    private fun showFullscreenGraph() {
+        val activity = context as? android.app.Activity ?: return
+        val dialog = AlertDialog.Builder(context)
+            .setCancelable(true)
+            .create()
+        dialog.window?.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN
+        )
+        val container = android.widget.FrameLayout(context)
+        val gv = GraphView(context).also { v ->
+            v.mode2D = !graph3D
+            if (graph3D) v.funcs.add(FuncItem(graph3DExpr, true, GraphView.PALETTE[0]))
+            else v.funcs.addAll(graphFuncs)
+            v.xMin = graphView?.xMin ?: -10.0
+            v.xMax = graphView?.xMax ?: 10.0
+            v.yMin = graphView?.yMin ?: -6.0
+            v.yMax = graphView?.yMax ?: 6.0
+            v.azim = graphView?.azim ?: -35.0
+            v.elev = graphView?.elev ?: 30.0
+            v.zoom3D = graphView?.zoom3D ?: 1.0
+        }
+
+        // 顶部控制栏
+        val closeBtn = android.widget.Button(context).apply {
+            text = "退出"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.argb(170, 30, 30, 36))
+            textSize = 12f
+            setOnClickListener { dialog.dismiss() }
+        }
+        val resetBtn = android.widget.Button(context).apply {
+            text = "⟲"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.argb(170, 30, 30, 36))
+            textSize = 14f
+            setOnClickListener { gv.resetView(); gv.invalidate() }
+        }
+        val bg = android.widget.LinearLayout(context).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.argb(170, 20, 20, 26))
+            addView(resetBtn, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+            addView(closeBtn, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+            setPadding(dp(8f).toInt(), dp(4f).toInt(), dp(8f).toInt(), dp(4f).toInt())
+        }
+
+        val lp = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        )
+        val gvLp = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        )
+        val bgLp = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply { gravity = android.view.Gravity.TOP or android.view.Gravity.RIGHT; topMargin = dp(8f).toInt(); rightMargin = dp(8f).toInt() }
+
+        container.addView(gv, gvLp)
+        container.addView(bg, bgLp)
+
+        dialog.setView(container, 0, 0, 0, 0)
+        dialog.show()
+    }
+
+    // ============ 设置项（由合并后的菜单调用） ============
 
     private fun fixDigits() {
         inputDialog("小数位数 Fix", "输入 0-9") { s ->
@@ -848,63 +1120,98 @@ class CalculatorView @JvmOverloads constructor(
     }
 
     private fun showVectorMenu() {
-        listDialog("向量 VECTOR", listOf("定义向量", "点积 A·B", "叉积 A×B", "夹角 θ", "模 |A|", "加法 A+B")) { i ->
-            when (i) { 0 -> pickVector("定义向量") { defineVector(it) }
-                1 -> vectorBinary("dot"); 2 -> vectorBinary("cross"); 3 -> vectorAngle()
-                4 -> vectorUnary("模") { v -> resultDialog("模", Fmt.num(kotlin.math.sqrt(v.sumOf { it * it }))) }
-                5 -> vectorBinary("add") }
+        val items = listOf(
+            "定义向量 (2D→复数可用)",
+            "加法 A+B", "减法 A−B", "数乘 k·A",
+            "点积 A·B", "叉积 A×B", "夹角 θ",
+            "模 |A|", "单位向量 Â", "投影 Proj(A→B)"
+        )
+        listDialog("向量 VECTOR", items) { i ->
+            when (i) {
+                0 -> pickVector("定义向量") { defineVector(it) }
+                1 -> vectorBinary("add")
+                2 -> vectorBinary("sub")
+                3 -> vectorScale()
+                4 -> vectorBinary("dot")
+                5 -> vectorBinary("cross")
+                6 -> vectorAngle()
+                7 -> vectorUnary("模") { resultDialog("模", Fmt.num(it.norm())) }
+                8 -> vectorUnary("单位向量") { resultDialog("单位向量", it.unit().toStringFmt()) }
+                9 -> vectorProj()
+            }
         }
     }
     private fun pickVector(title: String, onPick: (String) -> Unit) {
         listDialog(title, listOf("VctA", "VctB", "VctC")) { i -> onPick(listOf("A", "B", "C")[i]) }
     }
+    private fun vec(n: String): Vector? = vectors[n]
     private fun defineVector(name: String) {
-        inputDialog("Vct$name 分量", "输入 x y z（空格分隔，2D 可只输入 x y）") { s ->
+        inputDialog("Vct$name 分量", "输入 x y 或 x y z（空格分隔；2D 可参与复数四则）") { s ->
             runCatching {
                 val d = parseDoubles(s)
-                if (d.size < 2) { toast("至少需要 2 个分量"); return@runCatching }
-                vectors[name] = doubleArrayOf(d[0], d[1], if (d.size >= 3) d[2] else 0.0)
-                toast("Vct$name 已定义")
+                if (d.size !in 2..3) { toast("需要 2 或 3 个分量"); return@runCatching }
+                val v = Vector.fromReals(if (d.size == 3) doubleArrayOf(d[0], d[1], d[2]) else doubleArrayOf(d[0], d[1]))
+                vectors[name] = v
+                if (v.dim == 2) {
+                    state.storeVar("Vct$name", v.toComplex())
+                    toast("Vct$name = ${Fmt.complex(v.toComplex(), state.cfg)}，可 RCL 插入表达式直接四则")
+                } else {
+                    state.storeVar("Vct$name", Complex.ZERO)
+                    toast("Vct$name 已定义（3D 用于点积/叉积等）")
+                }
             }.onFailure { toast("输入格式错误") }
         }
     }
-    private fun vec(n: String): DoubleArray? = vectors[n]
     private fun vectorBinary(mode: String) {
         pickVector("第一个向量") { a ->
-            vec(a) ?: run { toast("Vct$a 未定义"); return@pickVector }
+            val va = vec(a) ?: run { toast("Vct$a 未定义"); return@pickVector }
             pickVector("第二个向量") { b ->
-                val va = vec(a)!!; val vb = vec(b)!!
+                val vb = vec(b) ?: run { toast("Vct$b 未定义"); return@pickVector }
                 runCatching {
-                    val res = when (mode) {
-                        "dot" -> Modes_Res.dot(va, vb)
-                        "cross" -> { resultDialog("叉积", "(${Fmt.num(Modes_Res.cross(va, vb).let { it[0] })}, ${Fmt.num(Modes_Res.cross(va, vb).let { it[1] })}, ${Fmt.num(Modes_Res.cross(va, vb).let { it[2] })})"); return@runCatching }
-                        "add" -> { val c = doubleArrayOf(va[0]+vb[0], va[1]+vb[1], va[2]+vb[2]); resultDialog("和", "(${Fmt.num(c[0])}, ${Fmt.num(c[1])}, ${Fmt.num(c[2])})"); return@runCatching }
-                        else -> 0.0
+                    when (mode) {
+                        "add" -> resultDialog("和", (va + vb).toStringFmt())
+                        "sub" -> resultDialog("差", (va - vb).toStringFmt())
+                        "dot" -> resultDialog("点积", Fmt.complex(va.dot(vb), state.cfg))
+                        "cross" -> resultDialog("叉积", va.cross(vb).toStringFmt())
                     }
-                    resultDialog("点积", Fmt.num(res))
-                }.onFailure { toast("ERROR") }
+                }.onFailure { e -> toast(e.message ?: "Dimension ERROR") }
+            }
+        }
+    }
+    private fun vectorScale() {
+        pickVector("选择向量") { a ->
+            val va = vec(a) ?: run { toast("Vct$a 未定义"); return@pickVector }
+            inputDialog("数乘 k·Vct$a", "输入标量 k") { s ->
+                runCatching {
+                    val k = s.trim().toDouble()
+                    resultDialog("k·Vct$a", (va * k).toStringFmt())
+                }.onFailure { toast("输入格式错误") }
             }
         }
     }
     private fun vectorAngle() {
         pickVector("第一个向量") { a ->
-            vec(a) ?: run { toast("Vct$a 未定义"); return@pickVector }
+            val va = vec(a) ?: run { toast("Vct$a 未定义"); return@pickVector }
             pickVector("第二个向量") { b ->
-                val va = vec(a)!!; val vb = vec(b)!!
-                val dot = va[0]*vb[0]+va[1]*vb[1]+va[2]*vb[2]
-                val ma = kotlin.math.sqrt(va.sumOf { it*it })
-                val mb = kotlin.math.sqrt(vb.sumOf { it*it })
-                if (ma < 1e-12 || mb < 1e-12) { toast("向量为零"); return@pickVector }
-                val cosT = (dot/(ma*mb)).coerceIn(-1.0,1.0)
-                val deg = Math.toDegrees(kotlin.math.acos(cosT))
-                resultDialog("夹角", "${Fmt.num(deg)}°")
+                val vb = vec(b) ?: run { toast("Vct$b 未定义"); return@pickVector }
+                runCatching { resultDialog("夹角", "${Fmt.num(va.angleDeg(vb))}°") }
+                    .onFailure { e -> toast(e.message ?: "ERROR") }
             }
         }
     }
-    private fun vectorUnary(label: String, op: (DoubleArray) -> Unit) {
-        pickVector("选择向量") { a -> vec(a)?.let { op(it) } ?: toast("Vct$a 未定义") }
+    private fun vectorUnary(label: String, op: (Vector) -> Unit) {
+        pickVector("选择向量") { a -> vec(a)?.let(op) ?: toast("Vct$a 未定义") }
     }
-
+    private fun vectorProj() {
+        pickVector("被投影向量 A") { a ->
+            val va = vec(a) ?: run { toast("Vct$a 未定义"); return@pickVector }
+            pickVector("方向向量 B") { b ->
+                val vb = vec(b) ?: run { toast("Vct$b 未定义"); return@pickVector }
+                runCatching { resultDialog("投影", va.proj(vb).toStringFmt()) }
+                    .onFailure { e -> toast(e.message ?: "ERROR") }
+            }
+        }
+    }
     private fun showBaseMenu() {
         listDialog("进制 BASE-N", listOf("数值转换", "逻辑运算 AND/OR/XOR/NOT")) { i ->
             if (i == 0) baseConvertFlow() else logicFlow()
@@ -972,11 +1279,4 @@ class CalculatorView @JvmOverloads constructor(
             clearResult(); invalidate()
         }
     }
-}
-
-private object Modes_Res {
-    fun dot(a: DoubleArray, b: DoubleArray) = a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
-    fun cross(a: DoubleArray, b: DoubleArray): DoubleArray = doubleArrayOf(
-        a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]
-    )
 }

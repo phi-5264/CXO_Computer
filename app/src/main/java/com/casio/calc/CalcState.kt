@@ -68,7 +68,7 @@ class CalcState {
         // 如果光标前是数字，合并
         if (cursor > 0) {
             val l = tokens[cursor - 1]
-            if (l is NumTok && l.d != "10" && !l.d.contains('ᴱ') && !l.d.contains('E')) {
+            if (l is NumTok && !l.d.contains('ᴱ') && !l.d.contains('E')) {
                 var s = l.d + d.toString()
                 if (s == "0$d") s = d.toString()
                 if (isValidNum(s)) {
@@ -86,7 +86,7 @@ class CalcState {
     fun inputDot() {
         if (cursor > 0) {
             val l = tokens[cursor - 1]
-            if (l is NumTok && !l.d.contains('.') && l.d != "10") {
+            if (l is NumTok && !l.d.contains('.')) {
                 tokens[cursor - 1] = NumTok(l.n, l.d + ".")
                 return
             }
@@ -114,6 +114,10 @@ class CalcState {
 
     fun inputImag() {
         insert(ImagTok())
+    }
+
+    fun inputAngle() {
+        insert(AngleTok())
     }
 
     fun inputPostfix(op: String, display: String) {
@@ -168,14 +172,19 @@ class CalcState {
         return m
     }
 
-    fun evaluate(): String {
-        if (tokens.isEmpty()) return ""
+    fun evaluateValue(): Complex {
+        if (tokens.isEmpty()) return ans
         val ctx = EvalCtx(buildVars(), cfg)
         val r = Parser(tokens.toList(), ctx).evaluate()
         preAns = ans
         ans = r
         cursor = tokens.size
-        return Fmt.complex(r, cfg)
+        return r
+    }
+
+    fun evaluate(): String {
+        if (tokens.isEmpty()) return ""
+        return Fmt.complex(evaluateValue(), cfg)
     }
 
     fun lastResult(): String = Fmt.complex(ans, cfg)

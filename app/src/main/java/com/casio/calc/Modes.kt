@@ -83,6 +83,82 @@ class Matrix(val rows: Int, val cols: Int, val data: Array<DoubleArray>) {
     }
 }
 
+/** 向量：分量用复数表示，可与复数混合运算 */
+class Vector(val comps: List<Complex>) {
+    val dim: Int get() = comps.size
+
+    operator fun plus(o: Vector): Vector {
+        checkDim(o)
+        return Vector(comps.mapIndexed { i, c -> c + o.comps[i] })
+    }
+
+    operator fun minus(o: Vector): Vector {
+        checkDim(o)
+        return Vector(comps.mapIndexed { i, c -> c - o.comps[i] })
+    }
+
+    /** 数乘（复数/标量）：逐分量相乘 */
+    operator fun times(c: Complex): Vector = Vector(comps.map { it * c })
+    operator fun times(d: Double): Vector = times(Complex.fromReal(d))
+    operator fun div(d: Double): Vector = Vector(comps.map { it / Complex.fromReal(d) })
+
+    private fun checkDim(o: Vector) { check(dim == o.dim) { "Dimension ERROR" } }
+
+    /** 点积（复数标准内积 Σ a·conj(b)；实数分量时为普通点积） */
+    fun dot(o: Vector): Complex {
+        checkDim(o)
+        return comps.indices.fold(Complex.ZERO) { acc, i -> acc + comps[i] * o.comps[i].conj() }
+    }
+
+    /** 叉积（仅 3D） */
+    fun cross(o: Vector): Vector {
+        check(dim == 3 && o.dim == 3) { "Dimension ERROR (需 3D)" }
+        val a = comps; val b = o.comps
+        return Vector(listOf(
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]
+        ))
+    }
+
+    /** 模（范数） */
+    fun norm(): Double = sqrt(dot(this).re)
+
+    /** 单位向量 */
+    fun unit(): Vector {
+        val n = norm()
+        if (n < 1e-12) throw IllegalArgumentException("Math ERROR")
+        return this / n
+    }
+
+    /** 在 o 上的投影 */
+    fun proj(o: Vector): Vector = o * (dot(o) / Complex.fromReal(o.norm() * o.norm()))
+
+    /** 夹角（度） */
+    fun angleDeg(o: Vector): Double {
+        val n = norm() * o.norm()
+        if (n < 1e-12) throw IllegalArgumentException("Math ERROR")
+        val cosT = (dot(o).re / n).coerceIn(-1.0, 1.0)
+        return Math.toDegrees(acos(cosT))
+    }
+
+    /** 2D 向量 → 复数 x + yi */
+    fun toComplex(): Complex {
+        check(dim == 2) { "Dimension ERROR (需 2D)" }
+        return comps[0] + comps[1] * Complex.I
+    }
+
+    /** 2D 向量与复数做复平面乘法（旋转+缩放），结果仍是 2D 向量 */
+    fun complexMul(z: Complex): Vector = Vector.fromComplex(toComplex() * z)
+
+    fun toStringFmt(): String = "(" + comps.joinToString(", ") { Fmt.complex(it, CalcConfig()) } + ")"
+
+    companion object {
+        fun fromReals(d: DoubleArray) = Vector(d.map { Complex.fromReal(it) })
+        fun fromComplex(z: Complex) = Vector(listOf(Complex.fromReal(z.re), Complex.fromReal(z.im)))
+    }
+}
+
 /** 方程与科学常量等模式逻辑 */
 object Modes {
 
