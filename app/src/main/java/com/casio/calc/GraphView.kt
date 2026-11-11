@@ -23,18 +23,18 @@ class GraphView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     companion object {
-        /** 10 种高对比度颜色，按位置分配 */
+        /** 10 种颜色，按位置分配（首两条为参考图的蓝/红） */
         val PALETTE = intArrayOf(
-            Color.rgb(0xd8, 0x7b, 0x2d),   // 橙
-            Color.rgb(0x42, 0xa5, 0xf5),   // 蓝
-            Color.rgb(0x66, 0xbb, 0x6a),   // 绿
-            Color.rgb(0xe5, 0x39, 0x35),   // 红
-            Color.rgb(0xab, 0x47, 0xbc),   // 紫
-            Color.rgb(0xff, 0xeb, 0x3b),   // 黄
-            Color.rgb(0x00, 0x89, 0x7b),   // 青
-            Color.rgb(0xff, 0x6e, 0x40),   // 深橙
-            Color.rgb(0x9c, 0x27, 0xb0),   // 深紫
-            Color.rgb(0x26, 0xc6, 0xda),   // 浅青
+            Color.rgb(0x37, 0x74, 0xd6),   // 蓝
+            Color.rgb(0xd2, 0x4b, 0x4b),   // 红
+            Color.rgb(0x3f, 0xa4, 0x5b),   // 绿
+            Color.rgb(0xe0, 0x8a, 0x2e),   // 橙
+            Color.rgb(0x8e, 0x5b, 0xc8),   // 紫
+            Color.rgb(0x2a, 0xa6, 0xa6),   // 青
+            Color.rgb(0xc2, 0x46, 0x9e),   // 洋红
+            Color.rgb(0x8a, 0x6a, 0x4f),   // 棕
+            Color.rgb(0x9a, 0xa0, 0x2c),   // 橄榄
+            Color.rgb(0x2d, 0x8f, 0xd5),   // 浅蓝
         )
 
         /** 字符串 → token 列表 */
@@ -103,6 +103,8 @@ class GraphView @JvmOverloads constructor(
                             "i" -> out.add(ImagTok())
                             "ans" -> out.add(VarTok("Ans"))
                             "preans" -> out.add(VarTok("PreAns"))
+                            "ncr" -> out.add(OpTok("C", "nCr"))
+                            "npr" -> out.add(OpTok("P", "nPr"))
                             else -> out.add(VarTok(w.uppercase()))
                         }
                     }
@@ -192,33 +194,53 @@ class GraphView @JvmOverloads constructor(
     private val density get() = resources.displayMetrics.density
     private fun dp(v: Float) = v * density
 
+    // 白底 + 浅灰网格（参考卡西欧原生图形界面）
+    private val COLOR_GRAPH_BG = Color.WHITE
+    private val COLOR_GRID = Color.rgb(0xE4, 0xE4, 0xE4)
+    private val COLOR_AXIS = Color.rgb(0x22, 0x22, 0x22)
+    private val COLOR_TICK = Color.rgb(0x4A, 0x4A, 0x4A)
+    private val COLOR_BOX = Color.rgb(0xD2, 0xD5, 0xD9)
+    private val COLOR_SURFACE_LO = Color.rgb(0xC0, 0x3A, 0x3A)
+    private val COLOR_SURFACE_HI = Color.rgb(0xEC, 0x77, 0x77)
+    private val COLOR_MESH = Color.argb(0xB0, 0xFF, 0xFF, 0xFF)
+    private val COLOR_AXIS3D = Color.rgb(0x8C, 0x8C, 0x8C)
+
     private val paintGrid = Paint().apply {
-        color = Color.argb(0x66, 0xcc, 0xcc, 0xcc)
-        strokeWidth = 1f; style = Paint.Style.STROKE
-        pathEffect = DashPathEffect(floatArrayOf(6f, 4f), 0f)
+        color = COLOR_GRID; strokeWidth = 1f; style = Paint.Style.STROKE; isAntiAlias = true
     }
     private val paintAxis = Paint().apply {
-        color = Color.argb(0xcc, 0x33, 0x33, 0x33); strokeWidth = 2f
+        color = COLOR_AXIS; strokeWidth = dp(1.4f); style = Paint.Style.STROKE; isAntiAlias = true
     }
     private val paintCurve = Paint().apply {
-        strokeWidth = 3f; style = Paint.Style.STROKE; isAntiAlias = true
-        pathEffect = CornerPathEffect(4f)
+        strokeWidth = dp(2.6f); style = Paint.Style.STROKE; isAntiAlias = true
+        strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     }
     private val paintSurface = Paint().apply {
         style = Paint.Style.FILL; isAntiAlias = true
     }
-    private val paintBg = Paint().apply { color = Color.rgb(0x1a, 0x1a, 0x1e) }
+    private val paintMesh = Paint().apply {
+        color = COLOR_MESH; strokeWidth = dp(1f); style = Paint.Style.STROKE; isAntiAlias = true
+    }
+    private val paintBox = Paint().apply {
+        color = COLOR_BOX; strokeWidth = dp(1f); style = Paint.Style.STROKE; isAntiAlias = true
+    }
+    private val paintAxis3D = Paint().apply {
+        color = COLOR_AXIS3D; strokeWidth = dp(1.2f); style = Paint.Style.STROKE; isAntiAlias = true
+    }
+    private val paintBg = Paint().apply { color = COLOR_GRAPH_BG }
     private val paintLabel = Paint().apply {
-        color = Color.WHITE; textSize = 32f; typeface = Typeface.MONOSPACE
+        color = COLOR_TICK; textSize = dp(11f)
+        typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD); isAntiAlias = true
     }
     private val paintTextSmall = Paint().apply {
-        color = Color.argb(0xcc, 0xcc, 0xcc, 0xcc); textSize = 24f; typeface = Typeface.MONOSPACE
+        color = COLOR_TICK; textSize = dp(9f); typeface = Typeface.SANS_SERIF; isAntiAlias = true
     }
     private val paintLegend = Paint().apply {
-        color = Color.WHITE; textSize = 26f; typeface = Typeface.DEFAULT
+        color = COLOR_TICK; textSize = dp(9.5f); typeface = Typeface.SANS_SERIF; isAntiAlias = true
     }
     private val paintLegendSwatch = Paint().apply {
-        style = Paint.Style.FILL; isAntiAlias = true
+        style = Paint.Style.STROKE; isAntiAlias = true; strokeWidth = dp(2.2f)
+        strokeCap = Paint.Cap.ROUND
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -230,51 +252,74 @@ class GraphView @JvmOverloads constructor(
 
     private fun draw2D(canvas: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        paintTextSmall.textSize = dp(9f)
+        paintTextSmall.textSize = dp(9.5f)
 
-        // 网格
         val xStep = niceStep(xMax - xMin)
         val yStep = niceStep(yMax - yMin)
+
+        // 网格
         var gx = ceil(xMin / xStep) * xStep
         while (gx <= xMax + 1e-9) {
             val px = xToPx(gx, w)
             canvas.drawLine(px, 0f, px, h, paintGrid)
-            if (abs(gx) > 1e-9) canvas.drawText(Fmt.num(gx), px + 2f, yToPx(0.0, h) - 2f, paintTextSmall)
             gx += xStep
         }
         var gy = ceil(yMin / yStep) * yStep
         while (gy <= yMax + 1e-9) {
             val py = yToPx(gy, h)
             canvas.drawLine(0f, py, w, py, paintGrid)
-            if (abs(gy) > 1e-9) canvas.drawText(Fmt.num(gy), xToPx(0.0, w) + 2f, py - 2f, paintTextSmall)
             gy += yStep
         }
 
         // 坐标轴
-        paintAxis.strokeWidth = dp(1.2f)
-        paintAxis.pathEffect = null
-        if (xMin <= 0 && xMax >= 0) canvas.drawLine(xToPx(0.0, w), 0f, xToPx(0.0, w), h, paintAxis)
-        if (yMin <= 0 && yMax >= 0) canvas.drawLine(0f, yToPx(0.0, h), w, yToPx(0.0, h), paintAxis)
+        val ax = if (xMin <= 0 && xMax >= 0) xToPx(0.0, w) else null
+        val ay = if (yMin <= 0 && yMax >= 0) yToPx(0.0, h) else null
+        if (ax != null) canvas.drawLine(ax, 0f, ax, h, paintAxis)
+        if (ay != null) canvas.drawLine(0f, ay, w, ay, paintAxis)
 
-        // 每条曲线
-        for ((idx, f) in funcs.withIndex()) {
+        // 刻度数字
+        val baseY = ay ?: (h - dp(4f))
+        gx = ceil(xMin / xStep) * xStep
+        while (gx <= xMax + 1e-9) {
+            if (abs(gx) > 1e-9) {
+                val px = xToPx(gx, w)
+                val ty = (baseY + dp(12f)).coerceAtMost(h - dp(2f))
+                val tx = px.coerceIn(dp(1f), w - dp(24f))
+                canvas.drawText(fmtTick(gx, xStep), tx, ty, paintTextSmall)
+            }
+            gx += xStep
+        }
+        val baseX = ax ?: dp(4f)
+        gy = ceil(yMin / yStep) * yStep
+        while (gy <= yMax + 1e-9) {
+            if (abs(gy) > 1e-9) {
+                val py = yToPx(gy, h)
+                val tx = (baseX + dp(4f)).coerceAtMost(w - dp(22f))
+                canvas.drawText(fmtTick(gy, yStep), tx, (py - dp(3f)).coerceIn(dp(8f), h - dp(2f)), paintTextSmall)
+            }
+            gy += yStep
+        }
+        if (ax != null && ay != null) {
+            canvas.drawText("0", ax - dp(9f), ay + dp(12f), paintTextSmall)
+        }
+
+        // 曲线
+        for (f in funcs) {
             if (!f.enabled) continue
             paintCurve.color = f.color
             drawCurve2D(canvas, f)
         }
 
-        // 顶部标题（首函数）
-        paintLabel.textSize = dp(11f)
-        if (funcs.isNotEmpty()) {
-            var shown = funcs.first().expr
-            while (paintLabel.measureText("y=$shown") > w - dp(16f) && shown.length > 4) {
-                shown = shown.substring(0, shown.length - 1)
-            }
-            canvas.drawText("y=$shown", dp(6f), dp(14f), paintLabel)
-        }
-
-        // 图例（多函数时显示在右下）
         if (funcs.count { it.enabled } > 1) drawLegend(canvas, w, h)
+    }
+
+    private fun fmtTick(v: Double, step: Double): String {
+        if (step >= 1.0) {
+            val r = round(v)
+            return if (abs(r) < 1e15) r.toLong().toString() else Fmt.num(v)
+        }
+        val dec = (-floor(log10(step))).toInt().coerceIn(1, 6)
+        return String.format("%.${dec}f", v).trimEnd('0').trimEnd('.')
     }
 
     private fun drawCurve2D(canvas: Canvas, f: FuncItem) {
@@ -310,17 +355,15 @@ class GraphView @JvmOverloads constructor(
 
     private fun drawLegend(canvas: Canvas, w: Float, h: Float) {
         val enabled = funcs.filter { it.enabled }
-        var y = h - dp(8f)
-        paintLegend.textSize = dp(10f)
-        paintLegendSwatch.style = Paint.Style.FILL
+        paintLegend.textSize = dp(9.5f)
+        var y = h - dp(6f)
         for (f in enabled.reversed()) {
-            val label = if (f.expr.length > 16) f.expr.substring(0, 16) + "…" else f.expr
+            val label = if (f.expr.length > 14) f.expr.substring(0, 14) + "…" else f.expr
             val tw = paintLegend.measureText(label)
             paintLegendSwatch.color = f.color
-            canvas.drawRoundRect(w - tw - dp(32f), y - dp(10f), w - dp(26f), y + dp(4f),
-                dp(3f), dp(3f), paintLegendSwatch)
-            canvas.drawText(label, w - tw - dp(22f), y, paintLegend)
-            y -= dp(18f)
+            canvas.drawLine(w - tw - dp(26f), y - dp(3.5f), w - dp(16f), y - dp(3.5f), paintLegendSwatch)
+            canvas.drawText(label, w - tw - dp(12f), y, paintLegend)
+            y -= dp(14f)
         }
     }
 
@@ -329,7 +372,6 @@ class GraphView @JvmOverloads constructor(
     private fun draw3D(canvas: Canvas) {
         val f = funcs.firstOrNull() ?: return
         val w = width.toFloat(); val h = height.toFloat()
-        android.util.Log.d("Graph3D", "draw3D w=$w h=$h expr='${f.expr}'")
 
         // 世界范围：用 [-R, R] 覆盖 X/Y；Z 从采样自动算
         val range = run {
@@ -337,10 +379,10 @@ class GraphView @JvmOverloads constructor(
             val yw = if (yMax.isFinite() && yMin.isFinite() && yMax > yMin) max(abs(yMax), abs(yMin)) else 5.0
             max(xw, yw).coerceAtLeast(3.0)
         }
-        val steps = 45
+        val steps = 44
         val step = range * 2.0 / steps
 
-        // 先采样所有 z 值，得到 z 范围
+        // 采样 z
         val zs = Array(steps + 1) { i ->
             DoubleArray(steps + 1) { j ->
                 val x = -range + i * step
@@ -350,53 +392,38 @@ class GraphView @JvmOverloads constructor(
             }
         }
         var minZ = Double.MAX_VALUE; var maxZ = -Double.MAX_VALUE
-        var finiteCount = 0
         for (row in zs) for (v in row) {
-            if (v.isFinite()) { finiteCount++; if (v < minZ) minZ = v; if (v > maxZ) maxZ = v }
+            if (v.isFinite()) { if (v < minZ) minZ = v; if (v > maxZ) maxZ = v }
         }
         if (!minZ.isFinite() || !maxZ.isFinite() || maxZ - minZ < 1e-9) {
             minZ = -1.0; maxZ = 1.0
         }
-        // 打印几个采样点，诊断 evalTokens 是否正常
-        val samples = listOf(
-            -range to -range, 0.0 to 0.0, range to range,
-            -range to 0.0, 0.0 to range
-        )
-        val sb = StringBuilder()
-        for ((x, y) in samples) {
-            val z = evalTokens(f.tokens, mapOf("X" to x, "Y" to y))
-            sb.append("(${String.format("%.2f", x)},${String.format("%.2f", y)})=z=${String.format("%.3f", z)}  ")
-        }
-        android.util.Log.d("Graph3D", "range=$range steps=$steps finite=$finiteCount minZ=${String.format("%.4f", minZ)} maxZ=${String.format("%.4f", maxZ)} samples=$sb")
+        val spanZ = (maxZ - minZ).coerceAtLeast(1e-6)
 
         // 等距投影基向量
         val az = Math.toRadians(azim); val el = Math.toRadians(elev)
         val cosA = cos(az); val sinA = sin(az); val cosE = cos(el); val sinE = sin(el)
 
-        // 屏幕 x 轴（世界中 x-y 平面旋转 az 后水平向右）
         val ax = cosA; val ay = -sinA
-        // 屏幕 y 轴（el 倾斜后 z 分量参与）
         // z 视觉归一化：把 z 起伏缩放得与 xy 同量级，避免低振幅曲面看起来像斜平面
-        val zVis = (maxZ - minZ).coerceAtLeast(1e-6)
-        val zK = ((2.0 * range) / zVis).coerceIn(0.05, 40.0)
+        val zK = ((2.0 * range) / spanZ).coerceIn(0.05, 40.0)
         val bx = sinA * sinE; val by = cosA * sinE; val bz = cosE * zK
         // 深度（z-sort 用，越大越靠近屏幕）
         val dx = -sinA * cosE; val dy = -cosA * cosE; val dz = sinE * zK
 
-        // 计算 scale：让整个 [±range, ±range, minZ..maxZ] 包围盒完整落进画布
         fun projectWorld(x: Double, y: Double, z: Double): Triple<Double, Double, Double> {
             val sx = ax * x + ay * y
             val sy = bx * x + by * y + bz * z
-            val dp = dx * x + dy * y + dz * z
-            return Triple(sx, sy, dp)
+            val dep = dx * x + dy * y + dz * z
+            return Triple(sx, sy, dep)
         }
 
-        // 找到包围盒的屏幕 x/y 极值
+        // 包围盒屏幕极值 → 缩放
         val corners = listOf(
-            projectWorld( range,  range, minZ), projectWorld(-range,  range, minZ),
-            projectWorld( range, -range, minZ), projectWorld(-range, -range, minZ),
-            projectWorld( range,  range, maxZ), projectWorld(-range,  range, maxZ),
-            projectWorld( range, -range, maxZ), projectWorld(-range, -range, maxZ),
+            projectWorld(range, range, minZ), projectWorld(-range, range, minZ),
+            projectWorld(range, -range, minZ), projectWorld(-range, -range, minZ),
+            projectWorld(range, range, maxZ), projectWorld(-range, range, maxZ),
+            projectWorld(range, -range, maxZ), projectWorld(-range, -range, maxZ),
         )
         var minSX = Double.MAX_VALUE; var maxSX = -Double.MAX_VALUE
         var minSY = Double.MAX_VALUE; var maxSY = -Double.MAX_VALUE
@@ -404,71 +431,59 @@ class GraphView @JvmOverloads constructor(
             if (c.first < minSX) minSX = c.first; if (c.first > maxSX) maxSX = c.first
             if (c.second < minSY) minSY = c.second; if (c.second > maxSY) maxSY = c.second
         }
-        val pad = dp(20f).toDouble()
+        val padX = dp(26f).toDouble(); val padY = dp(22f).toDouble()
         val spanSx = (maxSX - minSX).coerceAtLeast(1.0)
         val spanSy = (maxSY - minSY).coerceAtLeast(1.0)
-        val scaleXY = min((w - 2 * pad) / spanSx, (h - 2 * pad) / spanSy) * zoom3D.toDouble()
-        val originSx = -minSX * scaleXY + pad + (w - 2 * pad - spanSx * scaleXY) / 2.0
-        val originSy = maxSY * scaleXY + pad + (h - 2 * pad - spanSy * scaleXY) / 2.0
+        val scaleXY = min((w - 2 * padX) / spanSx, (h - 2 * padY) / spanSy) * zoom3D
+        val originSx = -minSX * scaleXY + padX + (w - 2 * padX - spanSx * scaleXY) / 2.0
+        val originSy = maxSY * scaleXY + padY + (h - 2 * padY - spanSy * scaleXY) / 2.0
 
-        fun projectFinal(x: Double, y: Double, z: Double): Triple<Float, Float, Float> {
+        fun project(x: Double, y: Double, z: Double): Triple<Float, Float, Float> {
             val sx = (ax * x + ay * y) * scaleXY + originSx
-            val sy = -(bx * x + by * y + bz * z) * scaleXY + originSy  // screen y 反向下为正
-            val dp = (dx * x + dy * y + dz * z)
-            return Triple(sx.toFloat(), sy.toFloat(), dp.toFloat())
+            val sy = -(bx * x + by * y + bz * z) * scaleXY + originSy
+            val dep = dx * x + dy * y + dz * z
+            return Triple(sx.toFloat(), sy.toFloat(), dep.toFloat())
         }
 
-        // 坐标轴
-        paintAxis.strokeWidth = dp(1.5f); paintAxis.pathEffect = null; paintAxis.color = Color.argb(0xaa, 0xbb, 0xbb, 0xbb)
-        // 原点
-        val O = projectFinal(0.0, 0.0, 0.0)
-        // X 轴（画到 range 处）
-        val XA = projectFinal(range, 0.0, 0.0)
-        val XB = projectFinal(-range, 0.0, 0.0)
-        // Y 轴
-        val YA = projectFinal(0.0, range, 0.0)
-        val YB = projectFinal(0.0, -range, 0.0)
-        // Z 轴（从 minZ 到 maxZ）
-        val ZA = projectFinal(0.0, 0.0, maxZ)
-        val ZB = projectFinal(0.0, 0.0, minZ)
-        canvas.drawLine(XB.first, XB.second, XA.first, XA.second, paintAxis)
-        canvas.drawLine(YB.first, YB.second, YA.first, YA.second, paintAxis)
-        canvas.drawLine(ZB.first, ZB.second, ZA.first, ZA.second, paintAxis)
-        // 轴标签
-        paintTextSmall.textSize = dp(9f); paintTextSmall.color = Color.argb(0xcc, 0xff, 0xff, 0xff)
-        canvas.drawText("X", XA.first + dp(2f), XA.second, paintTextSmall)
-        canvas.drawText("Y", YA.first + dp(2f), YA.second, paintTextSmall)
-        canvas.drawText("Z", ZA.first + dp(2f), ZA.second, paintTextSmall)
+        // 1) 包围盒（浅灰细线）
+        val c000 = project(-range, -range, minZ); val c100 = project(range, -range, minZ)
+        val c010 = project(-range, range, minZ);  val c110 = project(range, range, minZ)
+        val c001 = project(-range, -range, maxZ); val c101 = project(range, -range, maxZ)
+        val c011 = project(-range, range, maxZ);  val c111 = project(range, range, maxZ)
+        val edges = listOf(
+            c000 to c100, c100 to c110, c110 to c010, c010 to c000,
+            c001 to c101, c101 to c111, c111 to c011, c011 to c001,
+            c000 to c001, c100 to c101, c010 to c011, c110 to c111
+        )
+        for ((p0, p1) in edges) canvas.drawLine(p0.first, p0.second, p1.first, p1.second, paintBox)
 
-        // 曲面三角形（按深度排序，远→近）
-        data class Tri(val p0: Triple<Float, Float, Float>, val p1: Triple<Float, Float, Float>,
-                       val p2: Triple<Float, Float, Float>, val depth: Float, val z: Double)
+        // 2) 曲面三角形（按深度远→近排序）
+        data class Tri(
+            val p0: Triple<Float, Float, Float>, val p1: Triple<Float, Float, Float>,
+            val p2: Triple<Float, Float, Float>, val depth: Float, val t: Float
+        )
         val tris = ArrayList<Tri>()
         for (i in 0 until steps) {
             for (j in 0 until steps) {
                 val z00 = zs[i][j]; val z10 = zs[i + 1][j]; val z01 = zs[i][j + 1]; val z11 = zs[i + 1][j + 1]
-                val allFinite = z00.isFinite() && z10.isFinite() && z01.isFinite() && z11.isFinite()
-                if (!allFinite) continue
+                if (!(z00.isFinite() && z10.isFinite() && z01.isFinite() && z11.isFinite())) continue
                 val x0 = -range + i * step; val x1 = x0 + step
                 val y0 = -range + j * step; val y1 = y0 + step
-                val p00 = projectFinal(x0, y0, z00); val p10 = projectFinal(x1, y0, z10)
-                val p01 = projectFinal(x0, y1, z01); val p11 = projectFinal(x1, y1, z11)
-                // 两个三角形
+                val p00 = project(x0, y0, z00); val p10 = project(x1, y0, z10)
+                val p01 = project(x0, y1, z01); val p11 = project(x1, y1, z11)
                 val t0d = (p00.third + p10.third + p01.third) / 3f
                 val t1d = (p11.third + p10.third + p01.third) / 3f
-                val avgZ0 = (z00 + z10 + z01) / 3
-                val avgZ1 = (z11 + z10 + z01) / 3
-                tris.add(Tri(p00, p10, p01, t0d, avgZ0))
-                tris.add(Tri(p11, p10, p01, t1d, avgZ1))
+                val h0 = (((z00 + z10 + z01) / 3 - minZ) / spanZ).toFloat().coerceIn(0f, 1f)
+                val h1 = (((z11 + z10 + z01) / 3 - minZ) / spanZ).toFloat().coerceIn(0f, 1f)
+                tris.add(Tri(p00, p10, p01, t0d, h0))
+                tris.add(Tri(p11, p10, p01, t1d, h1))
             }
         }
         tris.sortBy { -it.depth }  // 深度小的（远）先画
 
         val path = Path()
-        val spanZ = (maxZ - minZ).coerceAtLeast(1e-6)
         for (t in tris) {
-            val hue = ((t.z - minZ) / spanZ * 240.0).toFloat()  // 蓝→红
-            paintSurface.color = Color.HSVToColor(floatArrayOf(hue, 0.78f, 0.92f))
+            paintSurface.color = blend(COLOR_SURFACE_LO, COLOR_SURFACE_HI, t.t)
             path.reset()
             path.moveTo(t.p0.first, t.p0.second)
             path.lineTo(t.p1.first, t.p1.second)
@@ -477,18 +492,76 @@ class GraphView @JvmOverloads constructor(
             canvas.drawPath(path, paintSurface)
         }
 
-        // 标题
-        paintLabel.textSize = dp(11f)
-        var shown = f.expr
-        while (paintLabel.measureText("z=$shown") > w - dp(16f) && shown.length > 4) {
-            shown = shown.substring(0, shown.length - 1)
+        // 3) 曲面网格线（白色细线覆盖）
+        val ms = 2
+        for (i in 0..steps step ms) {
+            val p = Path(); var started = false
+            for (j in 0..steps) {
+                val z = zs[i][j]
+                if (!z.isFinite()) { started = false; continue }
+                val pt = project(-range + i * step, -range + j * step, z)
+                if (!started) { p.moveTo(pt.first, pt.second); started = true } else p.lineTo(pt.first, pt.second)
+            }
+            canvas.drawPath(p, paintMesh)
         }
-        canvas.drawText("z=$shown", dp(6f), dp(14f), paintLabel)
-        // 诊断行：z 范围 / 放大系数 / 采样点数（便于排查）
-        paintTextSmall.textSize = dp(8f); paintTextSmall.color = Color.argb(0xcc, 0xcc, 0xcc, 0xcc)
-        canvas.drawText(
-            "z∈[${String.format("%.2f", minZ)},${String.format("%.2f", maxZ)}] zK=${String.format("%.1f", zK)} n=$finiteCount",
-            dp(6f), dp(26f), paintTextSmall
+        for (j in 0..steps step ms) {
+            val p = Path(); var started = false
+            for (i in 0..steps) {
+                val z = zs[i][j]
+                if (!z.isFinite()) { started = false; continue }
+                val pt = project(-range + i * step, -range + j * step, z)
+                if (!started) { p.moveTo(pt.first, pt.second); started = true } else p.lineTo(pt.first, pt.second)
+            }
+            canvas.drawPath(p, paintMesh)
+        }
+
+        // 4) 坐标轴 + 标注
+        val O = project(0.0, 0.0, 0.0)
+        val XA = project(range, 0.0, 0.0); val XB = project(-range, 0.0, 0.0)
+        val YA = project(0.0, range, 0.0); val YB = project(0.0, -range, 0.0)
+        val ZA = project(0.0, 0.0, maxZ); val ZB = project(0.0, 0.0, minZ)
+        canvas.drawLine(XB.first, XB.second, XA.first, XA.second, paintAxis3D)
+        canvas.drawLine(YB.first, YB.second, YA.first, YA.second, paintAxis3D)
+        canvas.drawLine(ZB.first, ZB.second, ZA.first, ZA.second, paintAxis3D)
+        arrowHead(canvas, O, XA, paintAxis3D)
+        arrowHead(canvas, O, YA, paintAxis3D)
+        arrowHead(canvas, O, ZA, paintAxis3D)
+
+        paintLabel.textSize = dp(11f)
+        canvas.drawText("X", XA.first + dp(3f), XA.second - dp(2f), paintLabel)
+        canvas.drawText("Y", YA.first + dp(3f), YA.second - dp(2f), paintLabel)
+        canvas.drawText("Z", ZA.first - dp(1f), ZA.second - dp(4f), paintLabel)
+
+        // 轴端刻度值
+        paintTextSmall.textSize = dp(8.5f)
+        canvas.drawText(Fmt.num(range), XA.first + dp(3f), XA.second + dp(9f), paintTextSmall)
+        canvas.drawText(Fmt.num(-range), XB.first - dp(14f), XB.second + dp(9f), paintTextSmall)
+        canvas.drawText(Fmt.num(range), YA.first + dp(3f), YA.second + dp(9f), paintTextSmall)
+        canvas.drawText(Fmt.num(-range), YB.first - dp(14f), YB.second + dp(9f), paintTextSmall)
+        canvas.drawText(Fmt.num(maxZ), ZA.first + dp(3f), ZA.second + dp(3f), paintTextSmall)
+        canvas.drawText(Fmt.num(minZ), ZB.first + dp(3f), ZB.second + dp(3f), paintTextSmall)
+        canvas.drawText("0", O.first - dp(8f), O.second + dp(10f), paintTextSmall)
+    }
+
+    /** 画一个小箭头（只画两条短线，避免和网格线冲突） */
+    private fun arrowHead(canvas: Canvas, from: Triple<Float, Float, Float>, to: Triple<Float, Float, Float>, p: Paint) {
+        val vx = to.first - from.first; val vy = to.second - from.second
+        val len = sqrt((vx * vx + vy * vy).toDouble()).toFloat()
+        if (len < 1f) return
+        val ux = vx / len; val uy = vy / len
+        val s = dp(6f)
+        val px = -uy; val py = ux
+        canvas.drawLine(to.first, to.second, to.first - ux * s + px * s * 0.6f, to.second - uy * s + py * s * 0.6f, p)
+        canvas.drawLine(to.first, to.second, to.first - ux * s - px * s * 0.6f, to.second - uy * s - py * s * 0.6f, p)
+    }
+
+    /** 颜色线性插值 */
+    private fun blend(c0: Int, c1: Int, t: Float): Int {
+        val k = t.coerceIn(0f, 1f)
+        return Color.rgb(
+            (Color.red(c0) + (Color.red(c1) - Color.red(c0)) * k).toInt(),
+            (Color.green(c0) + (Color.green(c1) - Color.green(c0)) * k).toInt(),
+            (Color.blue(c0) + (Color.blue(c1) - Color.blue(c0)) * k).toInt()
         )
     }
 

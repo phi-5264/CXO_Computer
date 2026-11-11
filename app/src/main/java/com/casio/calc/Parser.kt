@@ -143,10 +143,15 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         return apply(f.fn, arg)
     }
 
+    /** 三角函数特殊角归零：sin(180°)、cos(90°)、tan(180°) 等理论值为 0 的角，
+     *  浮点算出来是 1e-16 量级的噪声，这里按输出归零，避免显示成 1.2×10^-16。 */
+    private fun snapTrig(c: Complex): Complex =
+        if (c.isReal && abs(c.re) < 1e-12) Complex.ZERO else c
+
     private fun apply(fn: String, a: Complex): Complex = when (fn) {
-        "sin" -> toAng(a).sin()
-        "cos" -> toAng(a).cos()
-        "tan" -> toAng(a).tan()
+        "sin" -> snapTrig(toAng(a).sin())
+        "cos" -> snapTrig(toAng(a).cos())
+        "tan" -> snapTrig(toAng(a).tan())
         "asin" -> fromAng(realOnly(a) { asin(it) })
         "acos" -> fromAng(realOnly(a) { acos(it) })
         "atan" -> fromAng(realOnly(a) { atan(it) })

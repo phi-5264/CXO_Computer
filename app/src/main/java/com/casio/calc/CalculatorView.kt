@@ -601,19 +601,28 @@ class CalculatorView @JvmOverloads constructor(
     }
     private fun clearResult() { resultText = null }
 
+    /** 刚按过 = 之后继续按运算符：用 Ans 接着算，而不是把旧表达式拿来续接。 */
+    private fun beginOp() {
+        if (justEvaluated) {
+            state.clearAll()
+            state.inputVar("Ans")
+        }
+        justEvaluated = false
+    }
+
     private fun perform(act: String) {
         when {
             act.length == 1 && act[0].isDigit() -> {
                 startFreshIfNeeded(); state.inputDigit(act.toInt()); clearResult()
             }
             act == "dot" -> { startFreshIfNeeded(); state.inputDot(); clearResult() }
-            act == "add" -> { justEvaluated = false; state.inputOperator("+"); clearResult() }
-            act == "sub" -> { justEvaluated = false; state.inputOperator("-"); clearResult() }
-            act == "mul" -> { justEvaluated = false; state.inputOperator("×"); clearResult() }
-            act == "div" -> { justEvaluated = false; state.inputOperator("÷"); clearResult() }
-            act == "pow" -> { justEvaluated = false; state.inputOperator("^"); clearResult() }
-            act == "ncr" -> { justEvaluated = false; state.inputOperator("C"); clearResult() }
-            act == "npr" -> { justEvaluated = false; state.inputOperator("P"); clearResult() }
+            act == "add" -> { beginOp(); state.inputOperator("+"); clearResult() }
+            act == "sub" -> { beginOp(); state.inputOperator("-"); clearResult() }
+            act == "mul" -> { beginOp(); state.inputOperator("×"); clearResult() }
+            act == "div" -> { beginOp(); state.inputOperator("÷"); clearResult() }
+            act == "pow" -> { beginOp(); state.inputOperator("^"); clearResult() }
+            act == "ncr" -> { beginOp(); state.inputOperator("C"); clearResult() }
+            act == "npr" -> { beginOp(); state.inputOperator("P"); clearResult() }
             act == "lp" -> { startFreshIfNeeded(); state.inputLParen(); clearResult() }
             act == "rp" -> { justEvaluated = false; state.inputRParen(); clearResult() }
             act == "neg" -> { startFreshIfNeeded(); state.inputNegate(); clearResult() }

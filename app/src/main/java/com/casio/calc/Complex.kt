@@ -14,8 +14,24 @@ class Complex(val re: Double, val im: Double = 0.0) {
     val real: Double get() = re
     val imag: Double get() = im
 
-    operator fun plus(o: Complex) = Complex(re + o.re, im + o.im)
-    operator fun minus(o: Complex) = Complex(re - o.re, im - o.im)
+    operator fun plus(o: Complex): Complex {
+        val r = re + o.re; val i = im + o.im
+        val mr = max(abs(re), abs(o.re)); val mi = max(abs(im), abs(o.im))
+        // 只抹掉"完全由浮点噪声造成"的抵消（约 4 ulp），
+        // 不能用 1e-13 这种宽松阈值，否则 10^15+3-10^15 会变成 0。
+        return Complex(
+            if (mr > 0.0 && abs(r) < 1e-15 * mr) 0.0 else r,
+            if (mi > 0.0 && abs(i) < 1e-15 * mi) 0.0 else i
+        )
+    }
+    operator fun minus(o: Complex): Complex {
+        val r = re - o.re; val i = im - o.im
+        val mr = max(abs(re), abs(o.re)); val mi = max(abs(im), abs(o.im))
+        return Complex(
+            if (mr > 0.0 && abs(r) < 1e-15 * mr) 0.0 else r,
+            if (mi > 0.0 && abs(i) < 1e-15 * mi) 0.0 else i
+        )
+    }
     operator fun times(o: Complex) =
         Complex(re * o.re - im * o.im, re * o.im + im * o.re)
 
@@ -51,9 +67,11 @@ class Complex(val re: Double, val im: Double = 0.0) {
     }
 
     fun pow(e: Complex): Complex {
-        if (e.isReal) {
-            val p = e.re
-            if (isReal && re >= 0.0) return Complex(re.pow(p))
+        // 实数底数：负数的整数次幂也应走实数路线（Math.pow 对负底的整数指数是正确的），
+        // 否则会被 exp(ln) 复数路线带入虚假虚部，导致结果变成复数或 NaN。
+        if (e.isReal && isReal) {
+            val r = re.pow(e.re)
+            if (!r.isNaN()) return Complex(r)
         }
         return (e * ln()).exp()
     }
@@ -67,15 +85,25 @@ class Complex(val re: Double, val im: Double = 0.0) {
 
     fun equalsReal(v: Double): Boolean = abs(re - v) < 1e-12 && isReal
 
-    /** 四舍五入到 12 位有效数字，消除浮点噪声 */
+    /** 四舍五入到 12 位有效数字，消除浮点噪声。
+     *  归零判断按"相对量级"：只抹掉比整体小 1e-12 以下的成分，
+     *  这样 2^-50、1e-15、i×1e-15 这类真实小值不会被抹成 0。
+     *  （复数路线算出的实数值通常带 1e-16 量级虚部噪声，相对判断能正确清掉。） */
     fun cleaned(): Complex {
-        fun c(v: Double): Double {
-            if (v.isNaN() || v.isInfinite()) return v
-            if (abs(v) < 1e-14) return 0.0
-            val scale = 10.0.pow(12 - floor(log10(abs(v))))
+        fun round12(v: Double): Double {
+            if (v.isNaN() || v.isInfinite() || v == 0.0) return v
+            val k = 12 - floor(log10(abs(v)))
+            // 缩放因子超出 double 安全范围（极大/极小值）时不做舍入，避免溢出成 Inf/NaN
+            if (k < 0 || k > 300) return v
+            val scale = 10.0.pow(k)
             return round(v * scale) / scale
         }
-        return Complex(c(re), c(im))
+        val mag = max(abs(re), abs(im))
+        if (mag == 0.0 || mag.isNaN() || mag.isInfinite()) return Complex(round12(re), round12(im))
+        val eps = 1e-12 * mag
+        val r = if (abs(re) < eps) 0.0 else re
+        val i = if (abs(im) < eps) 0.0 else im
+        return Complex(round12(r), round12(i))
     }
 
     companion object {

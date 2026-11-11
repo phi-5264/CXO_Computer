@@ -29,10 +29,10 @@ object Fmt {
         } else rounded.toString()
     }
 
-    /** 归一化很小的浮点误差 */
+    /** 归一化很小的浮点误差（只处理真正的下溢，保留真实小值） */
     fun tidy(v: Double): Double {
         if (v.isNaN() || v.isInfinite()) return v
-        if (abs(v) < 1e-13) return 0.0
+        if (abs(v) < 1e-300) return 0.0
         return v
     }
 
@@ -105,14 +105,21 @@ object Fmt {
         return real(r, cfg) + "∠" + real(th, cfg) + unit
     }
 
-    /** 直角坐标形式：a+bi, a-bi, a, bi */
+    /** 直角坐标形式：a+bi, a-bi, a, bi
+     *  实/虚部是否显示按相对量级判断，避免 i×1e-15 这类真实小虚部被当成 0。 */
     fun rect(c: Complex, cfg: CalcConfig): String {
         val re = c.re
         val im = tidy(c.im)
-        if (abs(im) < 1e-12) return real(re, cfg)
+        // 非有限虚部不参与复数拼接，直接显示实部（通常是 Math ERROR / ∞）
+        if (im.isNaN() || im.isInfinite()) return real(re, cfg)
+        val mag = max(abs(re), abs(im))
+        val eps = if (mag == 0.0) 0.0 else 1e-12 * mag
+        val reZero = abs(re) <= eps
+        val imZero = abs(im) <= eps
+        if (imZero) return real(if (reZero) 0.0 else re, cfg)
         val imStr = real(abs(im), cfg)
         val coeff = if (imStr == "1") "" else imStr
-        if (abs(re) < 1e-12) {
+        if (reZero) {
             return (if (im < 0) "-" else "") + coeff + "i"
         }
         val r = real(re, cfg)
@@ -122,13 +129,20 @@ object Fmt {
 
     /** 复数显示（按 cfg.complexForm 选主形式） */
     fun complex(c: Complex, cfg: CalcConfig): String {
-        if (cfg.complexForm == ComplexForm.POLAR && abs(c.im) >= 1e-12) return polar(c, cfg)
+        if (cfg.complexForm == ComplexForm.POLAR && !isRealPart(c)) return polar(c, cfg)
         return rect(c, cfg)
+    }
+
+    /** 虚部是否可忽略（相对量级） */
+    private fun isRealPart(c: Complex): Boolean {
+        if (!c.re.isFinite() || !c.im.isFinite()) return true
+        val mag = max(abs(c.re), abs(c.im))
+        return mag == 0.0 || abs(c.im) <= 1e-12 * mag
     }
 
     /** 双形式显示：主形式 + 括号内附另一种形式（仅含虚部时） */
     fun both(c: Complex, cfg: CalcConfig): String {
-        if (abs(c.im) < 1e-12) return rect(c, cfg)
+        if (isRealPart(c)) return rect(c, cfg)
         return if (cfg.complexForm == ComplexForm.POLAR)
             "${polar(c, cfg)}  (${rect(c, cfg)})"
         else
