@@ -351,9 +351,12 @@ class GraphView @JvmOverloads constructor(
         // 屏幕 x 轴（世界中 x-y 平面旋转 az 后水平向右）
         val ax = cosA; val ay = -sinA
         // 屏幕 y 轴（el 倾斜后 z 分量参与）
-        val bx = sinA * sinE; val by = cosA * sinE; val bz = cosE
+        // z 视觉归一化：把 z 起伏缩放得与 xy 同量级，避免低振幅曲面看起来像斜平面
+        val zVis = (maxZ - minZ).coerceAtLeast(1e-6)
+        val zK = ((2.0 * range) / zVis).coerceIn(0.05, 40.0)
+        val bx = sinA * sinE; val by = cosA * sinE; val bz = cosE * zK
         // 深度（z-sort 用，越大越靠近屏幕）
-        val dx = -sinA * cosE; val dy = -cosA * cosE; val dz = sinE
+        val dx = -sinA * cosE; val dy = -cosA * cosE; val dz = sinE * zK
 
         // 计算 scale：让整个 [±range, ±range, minZ..maxZ] 包围盒完整落进画布
         fun projectWorld(x: Double, y: Double, z: Double): Triple<Double, Double, Double> {
@@ -456,6 +459,12 @@ class GraphView @JvmOverloads constructor(
             shown = shown.substring(0, shown.length - 1)
         }
         canvas.drawText("z=$shown", dp(6f), dp(14f), paintLabel)
+        // 诊断行：z 范围 / 放大系数 / 采样点数（便于排查）
+        paintTextSmall.textSize = dp(8f); paintTextSmall.color = Color.argb(0xcc, 0xcc, 0xcc, 0xcc)
+        canvas.drawText(
+            "z∈[${String.format("%.2f", minZ)},${String.format("%.2f", maxZ)}] zK=${String.format("%.1f", zK)} n=$finiteCount",
+            dp(6f), dp(26f), paintTextSmall
+        )
     }
 
     // ---- 工具 ----
