@@ -381,7 +381,7 @@ class GraphView @JvmOverloads constructor(
         val spanSy = (maxSY - minSY).coerceAtLeast(1.0)
         val scaleXY = min((w - 2 * pad) / spanSx, (h - 2 * pad) / spanSy) * zoom3D.toDouble()
         val originSx = -minSX * scaleXY + pad + (w - 2 * pad - spanSx * scaleXY) / 2.0
-        val originSy = -minSY * scaleXY + pad + (h - 2 * pad - spanSy * scaleXY) / 2.0
+        val originSy = maxSY * scaleXY + pad + (h - 2 * pad - spanSy * scaleXY) / 2.0
 
         fun projectFinal(x: Double, y: Double, z: Double): Triple<Float, Float, Float> {
             val sx = (ax * x + ay * y) * scaleXY + originSx
@@ -476,6 +476,7 @@ class GraphView @JvmOverloads constructor(
     private fun evalTokens(tokens: List<Tok>, vars: Map<String, Double>): Double {
         if (tokens.isEmpty()) return Double.NaN
         val s = CalcState(); s.tokens.addAll(tokens)
+        s.cfg.angle = AngleMode.RAD   // 函数图像按弧度求值，否则 sin 等被当作角度制压成近平面
         s.vars["X"] = Complex.fromReal(vars["X"] ?: 0.0)
         s.vars["Y"] = Complex.fromReal(vars["Y"] ?: 0.0)
         val ctx = EvalCtx(s.buildVars(), s.cfg)
