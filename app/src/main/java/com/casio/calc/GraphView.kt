@@ -58,14 +58,37 @@ class GraphView @JvmOverloads constructor(
                     c == '(' -> { out.add(LpTok()); i++ }
                     c == ')' -> { out.add(RpTok()); i++ }
                     c == ',' -> i++
+                    c == '²' -> { out.add(PostTok("sq", "²")); i++ }
+                    c == '³' -> {
+                        if (i + 1 < s.length && s[i + 1] == '√') { out.add(FnTok("cbrt", "³√")); i += 2 }
+                        else { out.add(PostTok("cube", "³")); i++ }
+                    }
+                    c == '⁻' -> {
+                        if (i + 1 < s.length && s[i + 1] == '¹') { out.add(PostTok("inv", "⁻¹")); i += 2 }
+                        else i++
+                    }
+                    c == '%' -> { out.add(PostTok("percent", "%")); i++ }
+                    c == '!' -> { out.add(PostTok("fact", "!")); i++ }
+                    c == '√' -> { out.add(FnTok("sqrt", "√")); i++ }
+                    c == '−' -> { out.add(OpTok("-", "−")); i++ }
                     c.isLetter() -> {
                         var w = ""
                         while (i < s.length && s[i].isLetter()) { w += s[i]; i++ }
-                        when (w.lowercase()) {
+                        val lw = w.lowercase()
+                        // 函数名后接上标 ⁻¹ → 反函数（如 sin⁻¹）
+                        if (i + 1 < s.length && s[i] == '⁻' && s[i + 1] == '¹' &&
+                            lw in setOf("sin", "cos", "tan", "sinh", "cosh", "tanh")) {
+                            i += 2
+                            val inv = when (lw) {
+                                "sin" -> "asin"; "cos" -> "acos"; "tan" -> "atan"
+                                "sinh" -> "asinh"; "cosh" -> "acosh"; else -> "atanh"
+                            }
+                            out.add(FnTok(inv, w + "⁻¹"))
+                        } else when (lw) {
                             "sin","cos","tan","asin","acos","atan","sinh","cosh","tanh",
                             "asinh","acosh","atanh",
-                            "ln","log","exp","sqrt","cbrt","abs","int","frac" -> {
-                                out.add(FnTok(w.lowercase(), w))
+                            "ln","log","exp","sqrt","cbrt","abs","arg","conjg","int","frac" -> {
+                                out.add(FnTok(lw, w))
                             }
                             "arcsin" -> out.add(FnTok("asin", "arcsin"))
                             "arccos" -> out.add(FnTok("acos", "arccos"))
@@ -78,6 +101,8 @@ class GraphView @JvmOverloads constructor(
                             "x" -> out.add(VarTok("X"))
                             "y" -> out.add(VarTok("Y"))
                             "i" -> out.add(ImagTok())
+                            "ans" -> out.add(VarTok("Ans"))
+                            "preans" -> out.add(VarTok("PreAns"))
                             else -> out.add(VarTok(w.uppercase()))
                         }
                     }

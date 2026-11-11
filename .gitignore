@@ -5,6 +5,7 @@ build/
 # Android
 /app/build/
 local.properties
+.android-sdk/
 *.iml
 .idea/
 captures/
