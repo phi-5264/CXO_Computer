@@ -76,7 +76,8 @@ object Fmt {
                     trim(String.format("%.${dec}f", a))
                 }
                 val out = if (neg) "-$s" else s
-                return if ((neg && out.startsWith("-0")) ) "0" else out
+                // 只把真正的 -0 归成 0；不能按前缀判断，否则 -0.5 之类会整段变成 0
+                return if (out == "-0") "0" else out
             }
         }
     }
@@ -110,8 +111,8 @@ object Fmt {
     fun rect(c: Complex, cfg: CalcConfig): String {
         val re = c.re
         val im = tidy(c.im)
-        // 非有限虚部不参与复数拼接，直接显示实部（通常是 Math ERROR / ∞）
-        if (im.isNaN() || im.isInfinite()) return real(re, cfg)
+        // 非有限值直接按实部显示（Math ERROR / ∞），避免 Inf 参与量级比较后被误判成 0
+        if (!re.isFinite() || im.isNaN() || im.isInfinite()) return real(re, cfg)
         val mag = max(abs(re), abs(im))
         val eps = if (mag == 0.0) 0.0 else 1e-12 * mag
         val reZero = abs(re) <= eps

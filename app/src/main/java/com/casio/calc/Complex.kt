@@ -45,7 +45,9 @@ class Complex(val re: Double, val im: Double = 0.0) {
 
     fun conj() = Complex(re, -im)
     fun absv() = hypot(re, im)
-    fun arg() = atan2(im, re)
+    // 注意 -0.0：负实数的虚部若是 -0.0，atan2 会返回 -π，导致 √(-1) 算成 -i。
+    // 这里把 -0.0 规范成 +0.0。
+    fun arg() = atan2(if (im == 0.0) 0.0 else im, re)
 
     fun exp(): Complex {
         val m = kotlin.math.exp(re)

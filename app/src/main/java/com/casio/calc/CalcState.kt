@@ -35,14 +35,33 @@ class CalcState {
         cursor++
     }
 
-    /** 删除光标前一个 token */
+    /** 删除光标前一个 token；多位数字按单个字符退格 */
     fun backspace() {
         if (cursor > 0) {
+            val l = tokens[cursor - 1]
+            if (l is NumTok && l.d.length > 1) {
+                val nd = l.d.dropLast(1)
+                val v = nd.toDoubleOrNull()
+                if (v == null) {
+                    tokens.removeAt(cursor - 1)
+                    cursor--
+                } else {
+                    tokens[cursor - 1] = NumTok(Complex.fromReal(v), nd)
+                }
+                return
+            }
             tokens.removeAt(cursor - 1)
             cursor--
         } else if (tokens.isNotEmpty()) {
             // 光标在首位，删除第一个
-            tokens.removeAt(0)
+            val f = tokens[0]
+            if (f is NumTok && f.d.length > 1) {
+                val nd = f.d.dropLast(1)
+                val v = nd.toDoubleOrNull()
+                tokens[0] = if (v == null) f else NumTok(Complex.fromReal(v), nd)
+            } else {
+                tokens.removeAt(0)
+            }
         }
     }
 

@@ -151,7 +151,13 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
     private fun apply(fn: String, a: Complex): Complex = when (fn) {
         "sin" -> snapTrig(toAng(a).sin())
         "cos" -> snapTrig(toAng(a).cos())
-        "tan" -> snapTrig(toAng(a).tan())
+        "tan" -> {
+            // tan(90°+k180°) 分母为 0 → Math ERROR（与卡西欧一致）
+            val ia = toAng(a)
+            val c = ia.cos()
+            if (c.isZero()) throw IllegalArgumentException("Math ERROR")
+            snapTrig(ia.sin() / c)
+        }
         "asin" -> fromAng(realOnly(a) { asin(it) })
         "acos" -> fromAng(realOnly(a) { acos(it) })
         "atan" -> fromAng(realOnly(a) { atan(it) })

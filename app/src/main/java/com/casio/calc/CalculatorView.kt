@@ -589,7 +589,9 @@ class CalculatorView @JvmOverloads constructor(
             alphaArmed && key.alphaAction.isNotEmpty() -> key.alphaAction
             else -> key.action
         }
-        shiftArmed = false; alphaArmed = false
+        // SHIFT 采用锁定模式：按一次后一直有效，直到再按一次 SHIFT 手动取消，
+        // 方便连续输入 sin⁻¹ / cos⁻¹ / tan⁻¹ 等上档功能。ALPHA 仍为单次生效。
+        alphaArmed = false
         perform(act)
         invalidate()
     }
@@ -628,7 +630,10 @@ class CalculatorView @JvmOverloads constructor(
             act == "neg" -> { startFreshIfNeeded(); state.inputNegate(); clearResult() }
             act == "exp" -> { startFreshIfNeeded(); state.inputExp(); clearResult() }
             act == "del" -> { justEvaluated = false; state.backspace(); clearResult() }
-            act == "ac" -> { state.clearAll(); state.cursor = 0; resultText = null; justEvaluated = false }
+            act == "ac" -> {
+                state.clearAll(); state.cursor = 0; resultText = null; justEvaluated = false
+                shiftArmed = false; alphaArmed = false   // AC 一并取消上档锁定
+            }
             act == "left" -> { justEvaluated = false; state.moveCursorLeft() }
             act == "right" -> { justEvaluated = false; state.moveCursorRight() }
             act == "eq" -> {
