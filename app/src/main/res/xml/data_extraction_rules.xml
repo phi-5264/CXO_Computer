@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- allowBackup=false 时 dataExtractionRules 也要显式关闭，
+     避免 API 31+ 设备上出现备份相关告警。 -->
+<data-extraction-rules>
+    <cloud-backup />
+    <device-transfer />
+</data-extraction-rules>
