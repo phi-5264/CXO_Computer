@@ -37,6 +37,16 @@ class GraphView @JvmOverloads constructor(
             Color.rgb(0x2d, 0x8f, 0xd5),   // 浅蓝
         )
 
+        /** 可按最长匹配识别的函数、常量和多字符变量。不能把连续字母整段吞掉，
+         *  否则 Xsin(X)、XY、Xpi 这些合法的隐式乘法会被当成 XSIN/XY/XPI。 */
+        private val WORDS = listOf(
+            "arcsin", "arccos", "arctan", "arsinh", "arcosh", "artanh",
+            "preans", "asinh", "acosh", "atanh", "conjg", "sqrt", "cbrt",
+            "asin", "acos", "atan", "sinh", "cosh", "tanh", "vcta", "vctb", "vctc",
+            "sin", "cos", "tan", "exp", "abs", "arg", "int", "frac", "ans", "log", "ncr", "npr",
+            "ln", "pi", "e", "x", "y", "i"
+        ).sortedByDescending { it.length }
+
         /** 字符串 → token 列表 */
         fun tokenize(s: String): List<Tok> {
             val out = mutableListOf<Tok>()
@@ -53,7 +63,7 @@ class GraphView @JvmOverloads constructor(
                             n += s[i]; i++
                         }
                         if (n.isEmpty() || n == ".") {
-                            i++   // 孤立的小数点：跳过
+                            // while 已经越过这个孤立小数点，不能再 i++，否则会连下一个字符一起跳过
                         } else {
                             var value = n.toDouble()
                             var disp = n
@@ -96,41 +106,50 @@ class GraphView @JvmOverloads constructor(
                     c == '!' -> { out.add(PostTok("fact", "!")); i++ }
                     c == '√' -> { out.add(FnTok("sqrt", "√")); i++ }
                     c == '−' -> { out.add(OpTok("-", "−")); i++ }
+                    c == 'π' -> { out.add(ConstTok("pi")); i++ }
                     c.isLetter() -> {
-                        var w = ""
-                        while (i < s.length && s[i].isLetter()) { w += s[i]; i++ }
-                        val lw = w.lowercase()
-                        // 函数名后接上标 ⁻¹ → 反函数（如 sin⁻¹）
-                        if (i + 1 < s.length && s[i] == '⁻' && s[i + 1] == '¹' &&
-                            lw in setOf("sin", "cos", "tan", "sinh", "cosh", "tanh")) {
-                            i += 2
-                            val inv = when (lw) {
-                                "sin" -> "asin"; "cos" -> "acos"; "tan" -> "atan"
-                                "sinh" -> "asinh"; "cosh" -> "acosh"; else -> "atanh"
+                        // 最长匹配一个已知词；未识别的字母按单字符变量处理。
+                        // 这样连续字母仍表示隐式乘法，而不是被拼成不存在的新变量。
+                        val word = WORDS.firstOrNull {
+                            s.regionMatches(i, it, 0, it.length, ignoreCase = true)
+                        }
+                        if (word == null) {
+                            out.add(VarTok(c.uppercase())); i++
+                        } else {
+                            val w = s.substring(i, i + word.length)
+                            i += word.length
+                            // 函数名后接上标 ⁻¹ → 反函数（如 sin⁻¹）
+                            if (i + 1 < s.length && s[i] == '⁻' && s[i + 1] == '¹' &&
+                                word in setOf("sin", "cos", "tan", "sinh", "cosh", "tanh")) {
+                                i += 2
+                                val inv = when (word) {
+                                    "sin" -> "asin"; "cos" -> "acos"; "tan" -> "atan"
+                                    "sinh" -> "asinh"; "cosh" -> "acosh"; else -> "atanh"
+                                }
+                                out.add(FnTok(inv, w + "⁻¹"))
+                            } else when (word) {
+                                "sin","cos","tan","asin","acos","atan","sinh","cosh","tanh",
+                                "asinh","acosh","atanh","ln","log","exp","sqrt","cbrt",
+                                "abs","arg","conjg","int","frac" -> out.add(FnTok(word, w))
+                                "arcsin" -> out.add(FnTok("asin", w))
+                                "arccos" -> out.add(FnTok("acos", w))
+                                "arctan" -> out.add(FnTok("atan", w))
+                                "arsinh" -> out.add(FnTok("asinh", w))
+                                "arcosh" -> out.add(FnTok("acosh", w))
+                                "artanh" -> out.add(FnTok("atanh", w))
+                                "pi" -> out.add(ConstTok("pi"))
+                                "e" -> out.add(ConstTok("e"))
+                                "x" -> out.add(VarTok("X"))
+                                "y" -> out.add(VarTok("Y"))
+                                "i" -> out.add(ImagTok())
+                                "ans" -> out.add(VarTok("Ans"))
+                                "preans" -> out.add(VarTok("PreAns"))
+                                "vcta" -> out.add(VarTok("VctA"))
+                                "vctb" -> out.add(VarTok("VctB"))
+                                "vctc" -> out.add(VarTok("VctC"))
+                                "ncr" -> out.add(OpTok("C", "nCr"))
+                                "npr" -> out.add(OpTok("P", "nPr"))
                             }
-                            out.add(FnTok(inv, w + "⁻¹"))
-                        } else when (lw) {
-                            "sin","cos","tan","asin","acos","atan","sinh","cosh","tanh",
-                            "asinh","acosh","atanh",
-                            "ln","log","exp","sqrt","cbrt","abs","arg","conjg","int","frac" -> {
-                                out.add(FnTok(lw, w))
-                            }
-                            "arcsin" -> out.add(FnTok("asin", "arcsin"))
-                            "arccos" -> out.add(FnTok("acos", "arccos"))
-                            "arctan" -> out.add(FnTok("atan", "arctan"))
-                            "arsinh" -> out.add(FnTok("asinh", "arsinh"))
-                            "arcosh" -> out.add(FnTok("acosh", "arcosh"))
-                            "artanh" -> out.add(FnTok("atanh", "artanh"))
-                            "pi","π" -> out.add(ConstTok("pi"))
-                            "e" -> out.add(ConstTok("e"))
-                            "x" -> out.add(VarTok("X"))
-                            "y" -> out.add(VarTok("Y"))
-                            "i" -> out.add(ImagTok())
-                            "ans" -> out.add(VarTok("Ans"))
-                            "preans" -> out.add(VarTok("PreAns"))
-                            "ncr" -> out.add(OpTok("C", "nCr"))
-                            "npr" -> out.add(OpTok("P", "nPr"))
-                            else -> out.add(VarTok(w.uppercase()))
                         }
                     }
                     c == ' ' -> i++

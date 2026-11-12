@@ -527,7 +527,8 @@ class CalculatorView @JvmOverloads constructor(
                     for (j in rects.indices) {
                         if (rects[j].contains(x, y)) {
                             val key = Keypad.rows[i][j]
-                            if (key.action != "mode") enterGraphEditing()
+                            // SHIFT/ALPHA 只切换上档状态，不应仅因按修饰键就退出绘图画面
+                            if (key.action !in setOf("mode", "shift", "alpha")) enterGraphEditing()
                             onKey(key)
                             return true
                         }
@@ -671,14 +672,17 @@ class CalculatorView @JvmOverloads constructor(
     }
 
     private fun memoryAdd(plus: Boolean) {
-        val v = if (state.tokens.isEmpty()) state.ans else {
-            try {
-                Parser(state.tokens.toList(), EvalCtx(state.buildVars(), state.cfg)).evaluate()
-            } catch (e: Exception) { state.ans }
+        try {
+            val v = if (state.tokens.isEmpty()) state.ans
+            else Parser(state.tokens.toList(), EvalCtx(state.buildVars(), state.cfg)).evaluate()
+            if (plus) state.memoryAdd(v) else state.memorySub(v)
+            resultText = Fmt.complex(state.memory, state.cfg)
+            justEvaluated = true
+        } catch (e: Exception) {
+            // 非法表达式必须报错，不能悄悄拿 Ans 参与运算并覆盖存储器
+            resultText = e.message?.ifEmpty { "ERROR" } ?: "ERROR"
+            justEvaluated = false
         }
-        if (plus) state.memoryAdd(v) else state.memorySub(v)
-        resultText = Fmt.complex(state.memory, state.cfg)
-        justEvaluated = true
     }
 
     // ============ 对话框辅助 ============
@@ -729,14 +733,19 @@ class CalculatorView @JvmOverloads constructor(
     private fun showStoreDialog() {
         val names = storeNames
         listDialog("STO 存入变量", names) { i ->
-            val v = if (state.tokens.isEmpty()) state.ans else {
-                try { Parser(state.tokens.toList(), EvalCtx(state.buildVars(), state.cfg)).evaluate() }
-                catch (e: Exception) { state.ans }
+            try {
+                val v = if (state.tokens.isEmpty()) state.ans
+                else Parser(state.tokens.toList(), EvalCtx(state.buildVars(), state.cfg)).evaluate()
+                state.storeVar(names[i], v)
+                if (names[i].startsWith("Vct")) vectors[names[i].removePrefix("Vct")] = Vector.fromComplex(v)
+                resultText = Fmt.complex(v, state.cfg)
+                justEvaluated = true
+            } catch (e: Exception) {
+                // 求值失败时保留原变量，不能把 Ans 当成表达式结果写进去
+                resultText = e.message?.ifEmpty { "ERROR" } ?: "ERROR"
+                justEvaluated = false
             }
-            state.storeVar(names[i], v)
-            if (names[i].startsWith("Vct")) vectors[names[i].removePrefix("Vct")] = Vector.fromComplex(v)
-            resultText = Fmt.complex(v, state.cfg)
-            justEvaluated = true; invalidate()
+            invalidate()
         }
     }
 
