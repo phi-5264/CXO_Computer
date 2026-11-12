@@ -240,6 +240,8 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         var i = 1
         while (i <= rr) {
             res = res * (n - rr + i) / i
+            // 后续因子均 >=1，一旦溢出最终结果也必然溢出；不能继续空转数亿次
+            if (res.isInfinite()) return Complex.fromReal(Double.POSITIVE_INFINITY)
             i++
         }
         return Complex.fromReal(res)
@@ -252,6 +254,7 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         var i = 0
         while (i < r) {
             res *= (n - i)
+            if (res.isInfinite()) return Complex.fromReal(Double.POSITIVE_INFINITY)
             i++
         }
         return Complex.fromReal(res)

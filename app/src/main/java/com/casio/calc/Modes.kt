@@ -39,14 +39,12 @@ class Matrix(val rows: Int, val cols: Int, val data: Array<DoubleArray>) {
         val n = rows
         if (n == 1) return data[0][0]
         val a = Array(n) { data[it].clone() }
-        var scale = 0.0
-        for (row in a) for (v in row) scale = max(scale, abs(v))
-        if (scale == 0.0) return 0.0
         var d = 1.0
         for (col in 0 until n) {
             var piv = col
             for (r in col + 1 until n) if (abs(a[r][col]) > abs(a[piv][col])) piv = r
-            if (abs(a[piv][col]) < 1e-12 * scale) return 0.0
+            // 尺度悬殊不等于奇异，例如 diag(1e-13, 1) 的行列式应为 1e-13
+            if (a[piv][col] == 0.0) return 0.0
             if (piv != col) { val t = a[piv]; a[piv] = a[col]; a[col] = t; d = -d }
             d *= a[col][col]
             for (r in col + 1 until n) {
@@ -62,19 +60,16 @@ class Matrix(val rows: Int, val cols: Int, val data: Array<DoubleArray>) {
         val n = rows
         check(n == cols) { "Dimension ERROR" }
         if (n == 1) {
-            if (abs(data[0][0]) < 1e-12) throw IllegalArgumentException("Math ERROR")
+            if (data[0][0] == 0.0) throw IllegalArgumentException("Math ERROR")
             return Matrix(1, 1, arrayOf(doubleArrayOf(1.0 / data[0][0])))
         }
         val a = Array(n) { data[it].clone() }
         val inv = Array(n) { DoubleArray(n) }
         for (i in 0 until n) inv[i][i] = 1.0
-        var scale = 0.0
-        for (row in a) for (v in row) scale = max(scale, abs(v))
-        if (scale == 0.0) throw IllegalArgumentException("Math ERROR")
         for (col in 0 until n) {
             var piv = col
             for (r in col + 1 until n) if (abs(a[r][col]) > abs(a[piv][col])) piv = r
-            if (abs(a[piv][col]) < 1e-12 * scale) throw IllegalArgumentException("Math ERROR")
+            if (a[piv][col] == 0.0) throw IllegalArgumentException("Math ERROR")
             if (piv != col) {
                 val t = a[piv]; a[piv] = a[col]; a[col] = t
                 val u = inv[piv]; inv[piv] = inv[col]; inv[col] = u
@@ -199,10 +194,10 @@ object Modes {
             m[i][n] = b[i]
         }
         for (col in 0 until n) {
-            // 部分主元
+            // 部分主元。只有真正消成 0 才判无解；绝对阈值会误伤小系数或尺度悬殊的合法方程。
             var piv = col
             for (r in col + 1 until n) if (abs(m[r][col]) > abs(m[piv][col])) piv = r
-            if (abs(m[piv][col]) < 1e-12) throw IllegalArgumentException("No unique solution")
+            if (m[piv][col] == 0.0) throw IllegalArgumentException("No unique solution")
             val tmp = m[col]; m[col] = m[piv]; m[piv] = tmp
             val dv = m[col][col]
             for (j in col until n + 1) m[col][j] /= dv
@@ -217,23 +212,35 @@ object Modes {
 
     // ---------- 二次/三次方程 ----------
     fun solveQuadratic(a: Double, b: Double, c: Double): List<Complex> {
-        if (abs(a) < 1e-15) {
-            if (abs(b) < 1e-15) return emptyList()
-            return listOf(Complex.fromReal(-c / b))
+        // 先按最大系数归一化，避免小系数被阈值吞掉，也避免 b²、4ac 上/下溢
+        val scale = maxOf(abs(a), abs(b), abs(c))
+        if (scale == 0.0) return emptyList()
+        if (!scale.isFinite()) throw IllegalArgumentException("Math ERROR")
+        val an = a / scale; val bn = b / scale; val cn = c / scale
+        if (an == 0.0) {
+            if (bn == 0.0) return emptyList()
+            return listOf(Complex.fromReal(-cn / bn))
         }
-        val d = b * b - 4 * a * c
+        val d = bn * bn - 4 * an * cn
         return if (d >= 0) {
             val sq = sqrt(d)
-            listOf(Complex.fromReal((-b + sq) / (2 * a)), Complex.fromReal((-b - sq) / (2 * a)))
+            if (sq == 0.0) {
+                val root = Complex.fromReal(-bn / (2 * an))
+                listOf(root, root)
+            } else {
+                // 稳定求根公式：避免 (-b±√D) 相近数相减把小根消成 0
+                val q = -0.5 * (bn + if (bn >= 0.0) sq else -sq)
+                listOf(Complex.fromReal(q / an), Complex.fromReal(cn / q))
+            }
         } else {
-            val re = -b / (2 * a)
-            val im = sqrt(-d) / (2 * a)
+            val re = -bn / (2 * an)
+            val im = sqrt(-d) / (2 * an)
             listOf(Complex(re, im), Complex(re, -im))
         }
     }
 
     fun solveCubic(a: Double, b: Double, c: Double, d: Double): List<Complex> {
-        if (abs(a) < 1e-15) return solveQuadratic(b, c, d)
+        if (a == 0.0) return solveQuadratic(b, c, d)
         val A = b / a
         val B = c / a
         val C = d / a
@@ -270,8 +277,9 @@ object Modes {
         val mean = x.sum() / n
         val sumX = x.sum()
         val sumX2 = x.sumOf { it * it }
-        val variancePop = sumX2 / n - mean * mean
-        val sx = if (n > 1) sqrt((sumX2 - n * mean * mean) / (n - 1)) else 0.0
+        // 两遍算法：先求均值再累计偏差，避免 Σx²/n−x̄² 在大偏移数据下灾难性抵消
+        val variancePop = x.sumOf { val d = it - mean; d * d } / n
+        val sx = if (n > 1) sqrt(variancePop * n / (n - 1)) else 0.0
         val sigmax = sqrt(max(0.0, variancePop))
         val lines = listOf(
             "n" to n.toString(),
@@ -293,12 +301,15 @@ object Modes {
         val sxy = xy.sumOf { it.first * it.second }
         val mx = sx / n
         val my = sy / n
-        val denom = n * sx2 - sx * sx
-        val slope = if (abs(denom) > 1e-15) (n * sxy - sx * sy) / denom else 0.0
+        // 回归使用中心化矩，避免 nΣxy−ΣxΣy 在大偏移或小尺度数据下抵消
+        var sxx = 0.0; var syy = 0.0; var sxyCentered = 0.0
+        for ((xv, yv) in xy) {
+            val dx = xv - mx; val dy = yv - my
+            sxx += dx * dx; syy += dy * dy; sxyCentered += dx * dy
+        }
+        val slope = if (sxx > 0.0) sxyCentered / sxx else 0.0
         val intercept = my - slope * mx
-        val r = if (abs(n * sx2 - sx * sx) > 1e-15 && abs(n * sy2 - sy * sy) > 1e-15)
-            (n * sxy - sx * sy) / sqrt((n * sx2 - sx * sx) * (n * sy2 - sy * sy))
-        else 0.0
+        val r = if (sxx > 0.0 && syy > 0.0) sxyCentered / sqrt(sxx * syy) else 0.0
         val lines = listOf(
             "n" to n.toString(),
             "x̄" to Fmt.num(mx),
