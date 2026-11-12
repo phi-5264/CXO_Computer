@@ -67,6 +67,17 @@ class CalculatorView @JvmOverloads constructor(
     private val brushAlpha = Paint()
     private val brushCursorBlink = Paint()
 
+    /** GRAPH 悬浮按钮画笔（复用，避免每帧新建） */
+    private val graphBtnBg = Paint().apply {
+        color = Color.argb(170, 20, 20, 26)
+        style = Paint.Style.FILL
+    }
+    private val graphBtnText = Paint().apply {
+        color = Color.WHITE
+        typeface = Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+    }
+
     private val density = resources.displayMetrics.density
     private fun dp(v: Float) = v * density
 
@@ -144,6 +155,7 @@ class CalculatorView @JvmOverloads constructor(
         brushKeyFunc.style = Paint.Style.FILL; brushKeyAccent.style = Paint.Style.FILL
         brushKeyShift.style = Paint.Style.FILL; brushKeyDel.style = Paint.Style.FILL
         brushKey.style = Paint.Style.FILL
+        graphBtnText.textSize = dp(12f)
     }
 
     private var cursorBlink = true
@@ -268,20 +280,30 @@ class CalculatorView @JvmOverloads constructor(
         drawGraphButtons(canvas)
     }
 
+    /** 3D 函数缓存：避免每一帧都重新分词表达式 */
+    private var graph3DFunc: FuncItem? = null
+
     /** 把 graphFuncs/graph3D/视角同步到 GraphView */
     private fun syncGraphView(gv: GraphView) {
         gv.funcs.clear()
         gv.mode2D = !graph3D
         if (graph3D) {
-            gv.funcs.add(FuncItem(graph3DExpr, true, GraphView.PALETTE[0]))
+            val cached = graph3DFunc
+            val item = if (cached != null && cached.expr == graph3DExpr) cached
+            else FuncItem(graph3DExpr, true, GraphView.PALETTE[0]).also { graph3DFunc = it }
+            gv.funcs.add(item)
         } else {
             gv.funcs.addAll(graphFuncs)
         }
-        gv.invalidate()
     }
 
     /** 图像模式下叠加的小按钮：模式切换、放大、缩小、重置、编辑表达式、退出 */
+    private var graphBtnRects: List<Pair<String, RectF>> = emptyList()
+    private var graphBtnKey = ""
+
     private fun graphButtons(): List<Pair<String, RectF>> {
+        val key = "${displayRect}|$graph3D"
+        if (key == graphBtnKey) return graphBtnRects
         val size = dp(28f)
         val gap = dp(5f)
         val bottom = displayRect.bottom - dp(5f)
@@ -293,22 +315,17 @@ class CalculatorView @JvmOverloads constructor(
             out.add(l to RectF(left, top, left + size, bottom))
             left += size + gap
         }
+        graphBtnRects = out
+        graphBtnKey = key
         return out
     }
 
     private fun drawGraphButtons(canvas: Canvas) {
-        val bg = Paint()
-        bg.color = Color.argb(170, 20, 20, 26)
-        bg.style = Paint.Style.FILL
-        val tx = Paint()
-        tx.color = Color.WHITE
-        tx.textSize = dp(12f)
-        tx.typeface = Typeface.DEFAULT_BOLD
-        tx.textAlign = Paint.Align.CENTER
+        // 画笔复用：这两支原先每帧都新建，滑动时会持续制造垃圾
         for ((label, r) in graphButtons()) {
-            canvas.drawRoundRect(r, dp(6f), dp(6f), bg)
-            val ty = r.centerY() - (tx.ascent() + tx.descent()) / 2f
-            canvas.drawText(label, r.centerX(), ty, tx)
+            canvas.drawRoundRect(r, dp(6f), dp(6f), graphBtnBg)
+            val ty = r.centerY() - (graphBtnText.ascent() + graphBtnText.descent()) / 2f
+            canvas.drawText(label, r.centerX(), ty, graphBtnText)
         }
     }
 

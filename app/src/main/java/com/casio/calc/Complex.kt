@@ -36,9 +36,16 @@ class Complex(val re: Double, val im: Double = 0.0) {
         Complex(re * o.re - im * o.im, re * o.im + im * o.re)
 
     operator fun div(o: Complex): Complex {
-        val d = o.re * o.re + o.im * o.im
-        if (d == 0.0) throw ArithmeticException("Math ERROR")
-        return Complex((re * o.re + im * o.im) / d, (im * o.re - re * o.im) / d)
+        // 直接用 |b|² 做分母会在 b≈1e200 时上溢成 Infinity、b≈1e-200 时下溢成 0，
+        // 导致 (1e200+1e200i)/(1e200+1e200i) 变成 NaN、小量级相除报错。
+        // 改为先按模长归一化分母：a/b = (a/|b|)·conj(b/|b|)。
+        val m = o.absv()
+        if (m == 0.0) throw ArithmeticException("Math ERROR")
+        val br = o.re / m
+        val bi = o.im / m
+        val ar = re / m
+        val ai = im / m
+        return Complex(ar * br + ai * bi, ai * br - ar * bi)
     }
 
     operator fun unaryMinus() = Complex(-re, -im)
