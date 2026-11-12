@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.*
 import android.text.InputType
 import android.util.AttributeSet
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
@@ -669,7 +668,6 @@ class CalculatorView @JvmOverloads constructor(
                 for (j in rects.indices) {
                     if (rects[j].contains(x, y)) {
                         pressedRow = i; pressedCol = j
-                        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         onKey(Keypad.rows[i][j])
                         invalidate()
                         return true
@@ -765,7 +763,8 @@ class CalculatorView @JvmOverloads constructor(
             funcs.containsKey(act) -> { startFreshIfNeeded(); state.inputFunc(act, funcs[act]!!); clearResult() }
             posts.containsKey(act) -> { startFreshIfNeeded(); state.inputPostfix(act, posts[act]!!); clearResult() }
             act in varLetters -> { startFreshIfNeeded(); state.inputVar(act); clearResult() }
-            else -> toast("未定义功能:$act")
+            // 未映射的内部动作静默忽略，不再向用户暴露开发期的 "未定义功能:xxx"
+            else -> Unit
         }
     }
 
