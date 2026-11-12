@@ -1288,7 +1288,8 @@ class CalculatorView @JvmOverloads constructor(
         listDialog("科学常数", Modes.constants.map { "${it.symbol}  ${it.name}" }) { i ->
             val c = Modes.constants[i]
             startFreshIfNeeded()
-            state.tokens.add(NumTok(Complex.fromReal(c.value), java.lang.String.format("%.9g", c.value)))
+            state.tokens.add(NumTok(Complex.fromReal(c.value),
+                java.lang.String.format("%.9g", c.value).replace('e', 'ᴱ')))
             state.cursor = state.tokens.size
             clearResult(); invalidate()
         }

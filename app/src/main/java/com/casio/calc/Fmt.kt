@@ -20,14 +20,7 @@ enum class AngleMode { DEG, RAD, GRA }
 object Fmt {
 
     /** 普通双精度数格式化（用于矩阵/方程等模式结果） */
-    fun num(v: Double): String {
-        if (v.isNaN()) return "ERROR"
-        val t = if (abs(v) < 1e-12) 0.0 else v
-        val rounded = round(t * 1e10) / 1e10
-        return if (rounded == floor(rounded) && abs(rounded) < 1e15) {
-            rounded.toLong().toString()
-        } else rounded.toString()
-    }
+    fun num(v: Double): String = real(v, CalcConfig())
 
     /** 归一化很小的浮点误差（只处理真正的下溢，保留真实小值） */
     fun tidy(v: Double): Double {
@@ -51,25 +44,32 @@ object Fmt {
             }
             DispMode.SCI -> {
                 if (a == 0.0) return "0"
-                val exp = floor(log10(a)).toInt()
-                val man = a / 10.0.pow(exp)
+                var exp = floor(log10(a)).toInt()
+                var man = a / 10.0.pow(exp)
+                // 尾数四舍五入进位到 10 时，指数要进一位（999 → 1×10^3 而不是 10×10^2）
+                if (String.format("%.${max(0, cfg.digits - 1)}f", man).toDouble() >= 10.0) {
+                    man /= 10.0; exp++
+                }
                 val s = String.format("%.${max(0, cfg.digits - 1)}f", man)
                 return (if (neg) "-" else "") + trim(s) + "×10^" + exp
             }
             DispMode.ENG -> {
                 if (a == 0.0) return "0"
                 val e = floor(log10(a)).toInt()
-                val e3 = e - ((e % 3) + 3) % 3
-                val man = a / 10.0.pow(e3)
+                var e3 = e - ((e % 3) + 3) % 3
+                var man = a / 10.0.pow(e3)
+                if (man >= 1000.0 - 5e-4) { man /= 1000.0; e3 += 3 }
                 val s = String.format("%.3f", man)
+                if (e3 == 0) return (if (neg) "-" else "") + trim(s)
                 return (if (neg) "-" else "") + trim(s) + "×10^" + e3
             }
             else -> {
                 // NORM
                 if (a == 0.0) return "0"
-                val e = floor(log10(a)).toInt()
+                var e = floor(log10(a)).toInt()
+                var man = a / 10.0.pow(e)
+                if (String.format("%.9f", man).toDouble() >= 10.0) { man /= 10.0; e++ }
                 val s = if (a >= 1e12 || a < 1e-9) {
-                    val man = a / 10.0.pow(e)
                     trim(String.format("%.9f", man)) + "×10^" + e
                 } else {
                     val dec = max(0, 9 - e)

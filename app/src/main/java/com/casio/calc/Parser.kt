@@ -14,14 +14,16 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         val r = parseExpr()
         // 自动闭合未闭合的括号
         while (peek() is RpTok) next()
-        if (peek() != null && peek() !is RpTok) {
-            // 仍有未消费的令牌视为语法错误（除非是括号）
-        }
+        // 还有剩余令牌说明式子里有多余内容（如 2)3），不能静默丢弃
+        if (pos < toks.size) throw IllegalArgumentException("Syntax ERROR")
         return r.cleaned()
     }
 
     private fun peek(): Tok? = toks.getOrNull(pos)
     private fun next(): Tok? = toks.getOrNull(pos++)
+
+    /** 项末尾出现过 % 时的百分数（已除以 100）；用于实现卡西欧的 100+10%=110 语义 */
+    private var pctTerm: Double? = null
 
     private fun parseExpr(): Complex {
         var left = parseTerm()
@@ -29,8 +31,16 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
             val t = peek()
             if (t is OpTok && (t.op == "+" || t.op == "-")) {
                 next()
+                pctTerm = null
                 val right = parseTerm()
-                left = if (t.op == "+") left + right else left - right
+                val pct = pctTerm.also { pctTerm = null }?.let { Complex.fromReal(it) }
+                left = when {
+                    // A±B% = A±A×B/100（与卡西欧一致）
+                    pct != null && t.op == "+" -> left + left * pct
+                    pct != null -> left - left * pct
+                    t.op == "+" -> left + right
+                    else -> left - right
+                }
             } else break
         }
         return left
@@ -43,6 +53,7 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
             when {
                 t is OpTok && (t.op == "×" || t.op == "÷" || t.op == "C" || t.op == "P") -> {
                     next()
+                    pctTerm = null
                     val right = parseUnary()
                     left = when (t.op) {
                         "×" -> left * right
@@ -55,10 +66,12 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
                 t is AngleTok -> {
                     // 极坐标：a∠θ = a * (cosθ + i·sinθ)，θ 按当前角度制
                     next()
+                    pctTerm = null
                     val ang = parseUnary()
                     left = left * polarUnit(ang)
                 }
                 isImplicitStart(t) -> {
+                    pctTerm = null
                     val right = parseUnary()
                     left = left * right
                 }
@@ -192,7 +205,11 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         "sq" -> v * v
         "cube" -> v * v * v
         "inv" -> Complex.ONE / v
-        "percent" -> v / Complex.fromReal(100.0)
+        "percent" -> {
+            val r = v / Complex.fromReal(100.0)
+            pctTerm = r.re   // 记录百分数，供 A±B% 的卡西欧语义使用
+            r
+        }
         "fact" -> Complex.fromReal(factorialGamma(v))
         else -> v
     }

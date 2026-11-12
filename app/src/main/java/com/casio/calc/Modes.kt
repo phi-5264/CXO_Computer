@@ -132,7 +132,11 @@ class Vector(val comps: List<Complex>) {
     }
 
     /** 在 o 上的投影 */
-    fun proj(o: Vector): Vector = o * (dot(o) / Complex.fromReal(o.norm() * o.norm()))
+    fun proj(o: Vector): Vector {
+        val n2 = o.norm() * o.norm()
+        if (n2 < 1e-24) throw IllegalArgumentException("Math ERROR")
+        return o * (dot(o) / Complex.fromReal(n2))
+    }
 
     /** 夹角（度） */
     fun angleDeg(o: Vector): Double {
@@ -211,25 +215,25 @@ object Modes {
         val C = d / a
         val Q = (A * A - 3 * B) / 9.0
         val R = (2 * A * A * A - 9 * A * B + 27 * C) / 54.0
+        // 注意：D = Q³ - R² 与判别式符号相反。D>0 表示三个实根（三角解法），
+        // D<0 表示一个实根 + 一对共轭复根（卡尔丹公式）。
         val D = Q * Q * Q - R * R
         val roots = mutableListOf<Complex>()
-        if (D >= 0) {
-            val sqD = sqrt(D)
-            val S = cbrt(R + sqD)
-            val T = cbrt(R - sqD)
-            val x1 = Complex.fromReal(S + T - A / 3.0)
-            roots.add(x1)
-            // 其余两根（复数）
+        if (D >= 0.0) {
+            val q3 = Q * Q * Q
+            val cosT = if (q3 <= 0.0) 1.0 else (R / sqrt(q3)).coerceIn(-1.0, 1.0)
+            val theta = acos(cosT)
+            val s = 2 * sqrt(max(0.0, Q))
+            for (k in 0..2) roots.add(Complex.fromReal(s * cos((theta + 2 * PI * k) / 3.0) - A / 3.0))
+        } else {
+            val sq = sqrt(R * R - Q * Q * Q)
+            val S = cbrt(-R + sq)
+            val T = cbrt(-R - sq)
+            roots.add(Complex.fromReal(S + T - A / 3.0))
             val reMid = -(S + T) / 2 - A / 3.0
             val imMid = sqrt(3.0) / 2.0 * (S - T)
             roots.add(Complex(reMid, imMid))
             roots.add(Complex(reMid, -imMid))
-        } else {
-            val theta = acos(R / sqrt(Q * Q * Q))
-            val s = -2 * sqrt(Q)
-            roots.add(Complex.fromReal(s * cos(theta / 3.0) - A / 3.0))
-            roots.add(Complex.fromReal(s * cos((theta + 2 * PI) / 3.0) - A / 3.0))
-            roots.add(Complex.fromReal(s * cos((theta + 4 * PI) / 3.0) - A / 3.0))
         }
         return roots
     }
@@ -351,8 +355,8 @@ object Modes {
             UnitItem("天 d", 86400.0)
         )),
         UnitCategory("速度", listOf(
-            UnitItem("米/秒 m/s", 1.0), UnitItem("千米/时 km/h", 3.6), UnitItem("英里/时 mph", 2.236936),
-            UnitItem("节 kn", 1.943844)
+            UnitItem("米/秒 m/s", 1.0), UnitItem("千米/时 km/h", 1.0 / 3.6),
+            UnitItem("英里/时 mph", 0.44704), UnitItem("节 kn", 0.5144444)
         )),
         UnitCategory("压力", listOf(
             UnitItem("帕 Pa", 1.0), UnitItem("千帕 kPa", 1e3), UnitItem("巴 bar", 1e5),

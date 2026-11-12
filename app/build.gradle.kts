@@ -11,8 +11,8 @@ android {
         applicationId = "com.casio.calc"
         minSdk = 24
         targetSdk = 34
-        versionCode = 5
-        versionName = "3.8"
+        versionCode = 6
+        versionName = "3.9"
     }
 
     signingConfigs {

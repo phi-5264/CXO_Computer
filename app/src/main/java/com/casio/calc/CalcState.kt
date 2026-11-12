@@ -87,7 +87,7 @@ class CalcState {
         // 如果光标前是数字，合并
         if (cursor > 0) {
             val l = tokens[cursor - 1]
-            if (l is NumTok && !l.d.contains('ᴱ') && !l.d.contains('E')) {
+            if (l is NumTok && !hasExponent(l.d)) {
                 var s = l.d + d.toString()
                 if (s == "0$d") s = d.toString()
                 if (isValidNum(s)) {
@@ -102,10 +102,14 @@ class CalcState {
     private fun isValidNum(s: String): Boolean =
         try { s.toDouble(); true } catch (e: Exception) { false }
 
+    /** 科学计数法常量（含 e/E/ᴱ）不能逐位合并，否则会把 6.6e-34 改成 0 */
+    private fun hasExponent(s: String): Boolean =
+        s.contains('ᴱ') || s.contains('E') || s.contains('e')
+
     fun inputDot() {
         if (cursor > 0) {
             val l = tokens[cursor - 1]
-            if (l is NumTok && !l.d.contains('.')) {
+            if (l is NumTok && !l.d.contains('.') && !hasExponent(l.d)) {
                 tokens[cursor - 1] = NumTok(l.n, l.d + ".")
                 return
             }
