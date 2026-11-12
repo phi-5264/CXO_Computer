@@ -40,6 +40,11 @@ class CalculatorView @JvmOverloads constructor(
 
     /** GRAPH 显示区短按追踪 */
     private var graphDownX = 0f; private var graphDownY = 0f; private var graphDownTime = 0L
+    /** 本次手势是否出现过多指或拖动：用于避免双指缩放后被误判成短按弹全屏 */
+    private var graphMultiTouch = false
+    private var graphDragged = false
+    /** 手势是否从显示区开始：一旦开始，后续事件即使滑出显示区也继续转发给图像 */
+    private var graphGesture = false
 
     // 布局几何
     private lateinit var displayRect: RectF
@@ -532,6 +537,7 @@ class CalculatorView @JvmOverloads constructor(
         if (state.mode == Mode.GRAPH && !graphEditing) {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 graphDownX = x; graphDownY = y; graphDownTime = event.eventTime
+                graphMultiTouch = false; graphDragged = false
                 for ((label, r) in graphButtons()) {
                     if (r.contains(x, y)) {
                         onGraphButton(label)
@@ -552,19 +558,34 @@ class CalculatorView @JvmOverloads constructor(
                     }
                 }
             }
-            if (graphView != null && displayRect.contains(x, y)) {
+            if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN || event.pointerCount > 1) {
+                graphMultiTouch = true
+            }
+            if (event.actionMasked == MotionEvent.ACTION_MOVE) {
+                val dx = x - graphDownX; val dy = y - graphDownY
+                if (dx * dx + dy * dy > dp(8f) * dp(8f)) graphDragged = true
+            }
+            if (event.actionMasked == MotionEvent.ACTION_DOWN && displayRect.contains(x, y)) {
+                graphGesture = true
+            }
+            if (graphView != null && graphGesture) {
                 val gv = graphView!!
                 gv.mode2D = !graph3D
                 val me = MotionEvent.obtain(event)
                 me.offsetLocation(-(displayRect.left + dp(3f)), -(displayRect.top + dp(3f)))
                 val handled = gv.onTouchEvent(me)
                 me.recycle()
-                // 短按弹全屏（ACTION_UP 且没拖拽）
+                // 短按弹全屏：双指缩放、拖动、多指后都不再算短按
                 if (event.actionMasked == MotionEvent.ACTION_UP) {
                     val dx = x - graphDownX; val dy = y - graphDownY
-                    if (dx * dx + dy * dy < dp(10f) * dp(10f) && event.eventTime - graphDownTime < 300) {
+                    if (!graphMultiTouch && !graphDragged &&
+                        dx * dx + dy * dy < dp(10f) * dp(10f) && event.eventTime - graphDownTime < 300) {
                         showFullscreenGraph()
                     }
+                }
+                if (event.actionMasked == MotionEvent.ACTION_UP ||
+                    event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    graphGesture = false
                 }
                 if (handled) invalidate()
             }

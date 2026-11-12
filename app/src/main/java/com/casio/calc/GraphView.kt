@@ -181,12 +181,25 @@ class GraphView @JvmOverloads constructor(
     var elev = 30.0
     var zoom3D = 1.0
 
+    /** 3D 画面的屏幕平移量（双指拖动/焦点缩放时累积） */
+    private var panSx = 0.0
+    private var panSy = 0.0
+
+    /** 上一次 3D 绘制时的投影基线：origin = A + B*zoom，用于按手指焦点缩放 */
+    private var geomASx = 0.0; private var geomBSx = 0.0
+    private var geomASy = 0.0; private var geomBSy = 0.0
+    private var has3DGeom = false
+
     // ========== 触摸追踪 ==========
     private var lastX = 0f; private var lastY = 0f
+    private var lastFocusX = 0f; private var lastFocusY = 0f
     private val scaleDetector = ScaleGestureDetector(context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            zoomBy(detector.scaleFactor.toDouble()); return true
+            val f = detector.scaleFactor.toDouble()
+            if (mode2D) zoomBy(f)
+            else zoom3DAt(detector.focusX.toDouble(), detector.focusY.toDouble(), f)
+            return true
         }
     })
 
@@ -198,8 +211,24 @@ class GraphView @JvmOverloads constructor(
             xMin = cx - hw; xMax = cx + hw
             yMin = cy - hh; yMax = cy + hh
         } else {
-            zoom3D = (zoom3D * factor).coerceIn(0.35, 6.0)
+            zoom3DAt(width / 2.0, height / 2.0, factor)
         }
+    }
+
+    /** 以屏幕点 (fx,fy) 为锚点缩放 3D 画面，手指下的位置保持不动 */
+    fun zoom3DAt(fx: Double, fy: Double, factor: Double) {
+        val z0 = zoom3D
+        val z1 = (z0 * factor).coerceIn(0.2, 12.0)
+        if (z1 == z0) return
+        if (!has3DGeom) { zoom3D = z1; return }
+        val o0x = geomASx + geomBSx * z0 + panSx
+        val o1x = fx - (fx - o0x) * (z1 / z0)
+        panSx = o1x - (geomASx + geomBSx * z1)
+
+        val o0y = geomASy + geomBSy * z0 + panSy
+        val o1y = fy - (fy - o0y) * (z1 / z0)
+        panSy = o1y - (geomASy + geomBSy * z1)
+        zoom3D = z1
     }
 
     /** 重置视角 */
@@ -207,14 +236,30 @@ class GraphView @JvmOverloads constructor(
         xMin = -10.0; xMax = 10.0; yMin = -6.0; yMax = 6.0
         zMin = Double.NaN; zMax = Double.NaN
         azim = -35.0; elev = 30.0; zoom3D = 1.0
+        panSx = 0.0; panSy = 0.0
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> { lastX = event.x; lastY = event.y }
+            // 双指期间以及抬起一指后都要重置基准，否则旋转会按旧坐标跳一大步
+            MotionEvent.ACTION_POINTER_DOWN,
+            MotionEvent.ACTION_POINTER_UP -> {
+                val idx = event.actionIndex.coerceIn(0, event.pointerCount - 1)
+                lastX = event.getX(idx); lastY = event.getY(idx)
+                val f = focusOf(event)
+                lastFocusX = f.first; lastFocusY = f.second
+            }
             MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount == 1 && !scaleDetector.isInProgress) {
+                if (event.pointerCount >= 2 && !mode2D) {
+                    // 双指拖动平移 3D 画面
+                    val f = focusOf(event)
+                    panSx += (f.first - lastFocusX).toDouble()
+                    panSy += (f.second - lastFocusY).toDouble()
+                    lastFocusX = f.first; lastFocusY = f.second
+                    invalidate()
+                } else if (event.pointerCount == 1 && !scaleDetector.isInProgress) {
                     val dx = event.x - lastX; val dy = event.y - lastY
                     if (mode2D) {
                         val w = width.toFloat().coerceAtLeast(1f)
@@ -229,8 +274,16 @@ class GraphView @JvmOverloads constructor(
                     invalidate()
                 }
             }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> invalidate()
         }
         return true
+    }
+
+    private fun focusOf(e: MotionEvent): Pair<Float, Float> {
+        val n = e.pointerCount.coerceAtLeast(1)
+        var sx = 0f; var sy = 0f
+        for (i in 0 until n) { sx += e.getX(i); sy += e.getY(i) }
+        return (sx / n) to (sy / n)
     }
 
     // ========== 绘图 ==========
@@ -425,7 +478,8 @@ class GraphView @JvmOverloads constructor(
             val yw = if (yMax.isFinite() && yMin.isFinite() && yMax > yMin) max(abs(yMax), abs(yMin)) else 5.0
             max(xw, yw).coerceAtLeast(3.0)
         }
-        val steps = 44
+        // 放大时提高采样密度，避免网格变粗糙；上限 64 控制每帧求值次数
+        val steps = (44 + ((zoom3D - 1.0) * 6).toInt()).coerceIn(44, 64)
         val step = range * 2.0 / steps
 
         // 采样 z
@@ -480,9 +534,16 @@ class GraphView @JvmOverloads constructor(
         val padX = dp(26f).toDouble(); val padY = dp(22f).toDouble()
         val spanSx = (maxSX - minSX).coerceAtLeast(1.0)
         val spanSy = (maxSY - minSY).coerceAtLeast(1.0)
-        val scaleXY = min((w - 2 * padX) / spanSx, (h - 2 * padY) / spanSy) * zoom3D
-        val originSx = -minSX * scaleXY + padX + (w - 2 * padX - spanSx * scaleXY) / 2.0
-        val originSy = maxSY * scaleXY + padY + (h - 2 * padY - spanSy * scaleXY) / 2.0
+        // K 与缩放无关，origin 可写成 A+B*zoom 的仿射形式，供焦点缩放反解平移量
+        val kFit = min((w - 2 * padX) / spanSx, (h - 2 * padY) / spanSy)
+        val scaleXY = kFit * zoom3D
+        geomASx = padX + (w - 2 * padX) / 2.0
+        geomBSx = -kFit * (minSX + spanSx / 2.0)
+        geomASy = padY + (h - 2 * padY) / 2.0
+        geomBSy = kFit * (maxSY - spanSy / 2.0)
+        has3DGeom = true
+        val originSx = geomASx + geomBSx * zoom3D + panSx
+        val originSy = geomASy + geomBSy * zoom3D + panSy
 
         fun project(x: Double, y: Double, z: Double): Triple<Float, Float, Float> {
             val sx = (ax * x + ay * y) * scaleXY + originSx
