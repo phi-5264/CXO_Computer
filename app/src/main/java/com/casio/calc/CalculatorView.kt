@@ -169,11 +169,13 @@ class CalculatorView @JvmOverloads constructor(
         // 按键统一使用无衬线粗体，避免部分 ROM 把 DEFAULT_BOLD 映射成衬线体，
         // 与真机按键字体差异过大
         val keyTypeface = Typeface.create("sans-serif", Typeface.BOLD)
+        val keyTypefaceNormal = Typeface.create("sans-serif", Typeface.NORMAL)
         brushPrimary.color = COLOR_WHITE; brushPrimary.typeface = keyTypeface
         brushPrimarySmall.color = COLOR_WHITE; brushPrimarySmall.typeface = keyTypeface
 
-        brushShift.color = COLOR_SHIFT; brushShift.typeface = keyTypeface
-        brushAlpha.color = COLOR_ALPHA; brushAlpha.typeface = keyTypeface
+        // 角落上档/字母标签用常规体，否则 9dp 粗体字太臃肿，与主标签风格冲突
+        brushShift.color = COLOR_SHIFT; brushShift.typeface = keyTypefaceNormal
+        brushAlpha.color = COLOR_ALPHA; brushAlpha.typeface = keyTypefaceNormal
 
         brushKeyNum.style = Paint.Style.FILL; brushKeyOp.style = Paint.Style.FILL
         brushKeyFunc.style = Paint.Style.FILL; brushKeyAccent.style = Paint.Style.FILL
@@ -472,10 +474,11 @@ class CalculatorView @JvmOverloads constructor(
     /** 绘制单个按键（美化版） */
     private fun paintKey(canvas: Canvas, r: RectF, key: Key, row: Int, col: Int) {
         val radius = dp(10f)
+        val hasCornerLabel = key.shift.isNotEmpty() || key.alpha.isNotEmpty()
 
-        // 底部投影：向下错开 1.5dp 画一层暗色，形成按键凸起感
+        // 底部投影：向下错开 2dp 画一层暗色，形成按键悬浮感
         canvas.drawRoundRect(
-            r.left, r.top + dp(1.5f), r.right, r.bottom + dp(1.5f),
+            r.left, r.top + dp(2f), r.right, r.bottom + dp(2f),
             radius, radius, brushKeyShadow
         )
 
@@ -484,16 +487,15 @@ class CalculatorView @JvmOverloads constructor(
         brushKey.style = Paint.Style.FILL
         canvas.drawRoundRect(r, radius, radius, brushKey)
 
-        // 按下高亮
+        // 按下高亮：半透明白色整层叠加
         if (row == pressedRow && col == pressedCol) {
-            brushKeyHighlight.color = Color.argb(46, 255, 255, 255)
+            brushKeyHighlight.color = Color.argb(55, 255, 255, 255)
             brushKeyHighlight.style = Paint.Style.FILL
             canvas.drawRoundRect(r, radius, radius, brushKeyHighlight)
         }
 
-        // 顶部高光：只保留上边缘的亮弧。
-        // 原实现画的是 30% 高度的整圈描边，底部那条直线会把按键切成两半。
-        brushKeyHighlight.color = Color.argb(38, 255, 255, 255)
+        // 顶部高光：只保留上边缘的亮弧（不再有底部横切的直线）
+        brushKeyHighlight.color = Color.argb(42, 255, 255, 255)
         brushKeyHighlight.style = Paint.Style.STROKE
         brushKeyHighlight.strokeWidth = dp(1f)
         canvas.save()
@@ -507,9 +509,6 @@ class CalculatorView @JvmOverloads constructor(
 
         // 主标签
         val cx = r.centerX()
-        val hasCornerLabel = key.shift.isNotEmpty() || key.alpha.isNotEmpty()
-        // 有上档标签时主标签略下移，避免与左上/右上小字挤在一起
-        val cy = if (hasCornerLabel) r.centerY() + dp(4f) else r.centerY()
         brushPrimary.textAlign = Paint.Align.CENTER
 
         // 特殊按键更大字
@@ -523,28 +522,30 @@ class CalculatorView @JvmOverloads constructor(
             else -> brushPrimary.textSize = dp(17f)
         }
 
-        // 上下居中（用 ascent+descent 的中线，比只看行高更准）
+        // 有角落标签时主标签下移 8dp，确保主标签顶部 > 角落标签底部，不再互相挤压
+        val cy = if (hasCornerLabel) r.centerY() + dp(8f) else r.centerY()
         val baseline = cy - (brushPrimary.ascent() + brushPrimary.descent()) / 2f
         canvas.drawText(key.primary, cx, baseline, brushPrimary)
 
-        // 角落标签：左右各占一半宽度，超出时自动缩字号，防止 sin⁻¹ 与 sinh 挤在一起溢出
+        // 角落上档/字母标签：9dp 常规体、紧靠按键顶部，避免与主标签垂直重叠
+        val cornerBaseline = r.top + dp(13f)
         val cornerMax = if (key.shift.isNotEmpty() && key.alpha.isNotEmpty())
             (r.width() - dp(14f)) / 2f else r.width() - dp(14f)
         if (key.shift.isNotEmpty()) {
             brushShift.textAlign = Paint.Align.LEFT
-            drawCornerLabel(canvas, key.shift, r.left + dp(7f), r.top + dp(14f), brushShift, cornerMax)
+            drawCornerLabel(canvas, key.shift, r.left + dp(7f), cornerBaseline, brushShift, cornerMax)
         }
         if (key.alpha.isNotEmpty()) {
             brushAlpha.textAlign = Paint.Align.RIGHT
-            drawCornerLabel(canvas, key.alpha, r.right - dp(7f), r.top + dp(14f), brushAlpha, cornerMax)
+            drawCornerLabel(canvas, key.alpha, r.right - dp(7f), cornerBaseline, brushAlpha, cornerMax)
         }
     }
 
-    /** 角落小标签：从 10dp 起，放不下就等比缩小（不低于 7dp） */
+    /** 角落小标签：从 9dp 起，放不下就等比缩小（不低于 7dp） */
     private fun drawCornerLabel(
         canvas: Canvas, text: String, x: Float, baseline: Float, paint: Paint, maxW: Float
     ) {
-        var size = dp(10f)
+        var size = dp(9f)
         paint.textSize = size
         val w = paint.measureText(text)
         if (maxW > 0f && w > maxW) {
