@@ -206,8 +206,11 @@ class GraphView @JvmOverloads constructor(
     /** 缩放 */
     fun zoomBy(factor: Double) {
         if (mode2D) {
+            if (!factor.isFinite() || factor <= 0.0) return
             val cx = (xMin + xMax) / 2.0; val cy = (yMin + yMax) / 2.0
-            val hw = (xMax - xMin) / 2.0 / factor; val hh = (yMax - yMin) / 2.0 / factor
+            // 视野不能缩到 0（网格步长退化会导致每帧画上千条线），也不能大到溢出成 ∞
+            val hw = ((xMax - xMin) / 2.0 / factor).coerceIn(1e-6, 1e12)
+            val hh = ((yMax - yMin) / 2.0 / factor).coerceIn(1e-6, 1e12)
             xMin = cx - hw; xMax = cx + hw
             yMin = cy - hh; yMax = cy + hh
         } else {
@@ -246,8 +249,11 @@ class GraphView @JvmOverloads constructor(
             // 双指期间以及抬起一指后都要重置基准，否则旋转会按旧坐标跳一大步
             MotionEvent.ACTION_POINTER_DOWN,
             MotionEvent.ACTION_POINTER_UP -> {
-                val idx = event.actionIndex.coerceIn(0, event.pointerCount - 1)
-                lastX = event.getX(idx); lastY = event.getY(idx)
+                // 抬起一指时 actionIndex 指向离开的那根手指，基准应取留在屏幕上的另一根
+                val idx = if (event.actionMasked == MotionEvent.ACTION_POINTER_UP)
+                    (if (event.actionIndex == 0) 1 else 0) else event.actionIndex
+                val i2 = idx.coerceIn(0, event.pointerCount - 1)
+                lastX = event.getX(i2); lastY = event.getY(i2)
                 val f = focusOf(event)
                 lastFocusX = f.first; lastFocusY = f.second
             }
@@ -264,8 +270,12 @@ class GraphView @JvmOverloads constructor(
                     if (mode2D) {
                         val w = width.toFloat().coerceAtLeast(1f)
                         val h = height.toFloat().coerceAtLeast(1f)
-                        xMin -= (xMax - xMin) * dx / w; xMax -= (xMax - xMin) * dx / w
-                        yMin += (yMax - yMin) * dy / h; yMax += (yMax - yMin) * dy / h
+                        // 先用同一个跨度平移两端；若先改 xMin 再算 (xMax-xMin)，
+                        // 每拖动一次视野就会轻微放大/缩小（缩放漂移）
+                        val spanX = (xMax - xMin) * dx / w
+                        val spanY = (yMax - yMin) * dy / h
+                        xMin -= spanX; xMax -= spanX
+                        yMin += spanY; yMax += spanY
                     } else {
                         azim += dx * 0.3
                         elev = (elev + dy * 0.3).coerceIn(-85.0, 85.0)
@@ -416,7 +426,7 @@ class GraphView @JvmOverloads constructor(
             return if (abs(r) < 1e15) r.toLong().toString() else Fmt.num(v)
         }
         val dec = (-floor(log10(step))).toInt().coerceIn(1, 6)
-        return String.format("%.${dec}f", v).trimEnd('0').trimEnd('.')
+        return String.format(java.util.Locale.US, "%.${dec}f", v).trimEnd('0').trimEnd('.')
     }
 
     private fun drawCurve2D(canvas: Canvas, f: FuncItem) {
@@ -698,7 +708,8 @@ class GraphView @JvmOverloads constructor(
         evalState.vars["Y"] = Complex.fromReal(y)
         return try {
             val r = Parser(tokens, EvalCtx(evalState.buildVarsInto(evalVars), evalState.cfg)).evaluate()
-            if (r.isReal) r.re else r.absv()
-        } catch (e: Exception) { Double.NaN }
+            // 复数结果没有实函数图像（例如 √X 在 X<0）：不能把模长当函数值画出来
+            if (r.isReal) r.re else Double.NaN
+        } catch (e: Exception) { Double.NaN } catch (e: StackOverflowError) { Double.NaN }
     }
 }

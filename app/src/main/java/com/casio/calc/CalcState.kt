@@ -156,11 +156,17 @@ class CalcState {
         insert(PostTok(op, display))
     }
 
-    fun inputLParen() = insert(LpTok())
+    fun inputLParen() {
+        // 递归下降求值器按嵌套深度递归，限制层数避免极端输入把栈撑爆
+        if (tokens.count { it is LpTok } - tokens.count { it is RpTok } >= 48) return
+        insert(LpTok())
+    }
 
     fun inputRParen() {
+        // 只统计光标之前的左括号：否则光标在行首时也能插入 ")"，产生 ")1(" 这种必然报错的式子
         var open = 0
-        for (t in tokens) {
+        for (i in 0 until cursor) {
+            val t = tokens[i]
             if (t is LpTok) open++
             if (t is RpTok) open--
         }

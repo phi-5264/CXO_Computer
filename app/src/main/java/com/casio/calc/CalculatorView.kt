@@ -83,6 +83,13 @@ class CalculatorView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
 
+    /** 按键顶部高光（复用，避免每帧为每个按键 new Paint/RectF） */
+    private val brushKeyHighlight = Paint().apply {
+        color = Color.argb(30, 255, 255, 255)
+        style = Paint.Style.STROKE
+    }
+    private val tmpRect = RectF()
+
     private val density = resources.displayMetrics.density
     private fun dp(v: Float) = v * density
 
@@ -160,14 +167,19 @@ class CalculatorView @JvmOverloads constructor(
         brushKeyFunc.style = Paint.Style.FILL; brushKeyAccent.style = Paint.Style.FILL
         brushKeyShift.style = Paint.Style.FILL; brushKeyDel.style = Paint.Style.FILL
         brushKey.style = Paint.Style.FILL
+        brushKeyHighlight.strokeWidth = dp(1f)
         graphBtnText.textSize = dp(12f)
     }
 
     private var cursorBlink = true
     private val cursorBlinkRunnable = object : Runnable {
         override fun run() {
-            cursorBlink = !cursorBlink
-            invalidate()
+            // 图像绘制状态下光标不可见，不必每 500ms 重绘整屏：
+            // 3D 曲面每帧都要重算并排序上万个三角形，周期性重绘会持续卡顿
+            if (!(state.mode == Mode.GRAPH && !graphEditing)) {
+                cursorBlink = !cursorBlink
+                invalidate()
+            }
             postDelayed(this, 500)
         }
     }
@@ -232,6 +244,9 @@ class CalculatorView @JvmOverloads constructor(
 
             val padL = displayRect.left + dp(14f)
             val padR = displayRect.right - dp(14f)
+            // 表达式过长时最低字号仍可能超出显示区，裁掉溢出部分，避免压到按键上
+            canvas.save()
+            canvas.clipRect(displayRect)
             // 指示行
             val ind = indicatorLine()
             brushInd.textAlign = Paint.Align.LEFT
@@ -244,6 +259,7 @@ class CalculatorView @JvmOverloads constructor(
                 val resY = displayRect.bottom - dp(8f)
                 drawRight(canvas, resultText!!, brushResult, padL, padR, resY)
             }
+            canvas.restore()
         }
 
         // 按键始终可见
@@ -450,14 +466,12 @@ class CalculatorView @JvmOverloads constructor(
         canvas.drawRoundRect(r, dp(10f), dp(10f), brushKey)
 
         // 按压效果：顶部高光
-        val hl = Paint()
-        hl.color = Color.argb(30, 255, 255, 255)
-        hl.style = Paint.Style.STROKE
-        hl.strokeWidth = dp(1f)
-        canvas.drawRoundRect(
-            RectF(r.left + dp(1f), r.top + dp(1f), r.right - dp(1f), r.top + dp(r.height() * 0.3f)),
-            dp(10f), dp(10f), hl
+        // 注意 r.height() 已是像素，不能再经过 dp() 放大
+        tmpRect.set(
+            r.left + dp(1f), r.top + dp(1f),
+            r.right - dp(1f), r.top + r.height() * 0.3f
         )
+        canvas.drawRoundRect(tmpRect, dp(10f), dp(10f), brushKeyHighlight)
 
         // 主标签
         val cx = r.centerX()
@@ -706,6 +720,10 @@ class CalculatorView @JvmOverloads constructor(
         } catch (e: Exception) {
             resultText = e.message?.let { if (it.isEmpty()) "ERROR" else it } ?: "ERROR"
             justEvaluated = false
+        } catch (e: StackOverflowError) {
+            // 极深嵌套括号/负号链可能导致递归溢出，不能直接崩溃
+            resultText = "ERROR"
+            justEvaluated = false
         }
     }
 
@@ -751,6 +769,17 @@ class CalculatorView @JvmOverloads constructor(
 
     private fun parseDoubles(s: String): List<Double> =
         s.trim().split(Regex("[,\\s;]+")).filter { it.isNotEmpty() }.map { it.toDouble() }
+
+    /** 区分“输入格式错误”和真正的数学错误（无解 / Math ERROR 等） */
+    private fun failToast(e: Throwable) {
+        val msg = when {
+            e is NumberFormatException -> "输入格式错误"
+            e.message == "No unique solution" -> "方程组无唯一解"
+            e.message.isNullOrEmpty() -> "ERROR"
+            else -> e.message!!
+        }
+        toast(msg)
+    }
 
     private fun parsePairs(s: String): List<Pair<Double, Double>> {
         val res = mutableListOf<Pair<Double, Double>>()
@@ -827,7 +856,13 @@ class CalculatorView @JvmOverloads constructor(
                 6 -> { state.mode = Mode.BASEN; showBaseMenu() }
                 7 -> { state.mode = Mode.UNIT; showUnitCatMenu() }
                 8 -> { state.mode = Mode.CONST; showConstList() }
-                9 -> { state.mode = Mode.GRAPH; showGraphMenu() }
+                9 -> {
+                    // 先把当前函数装进编辑缓冲：否则菜单取消后 GRAPH 里还留着 COMP 的式子，
+                    // 直接按 = 会把它悄悄写进 f1
+                    state.mode = Mode.GRAPH
+                    enterGraphEditing()
+                    showGraphMenu()
+                }
                 10 -> {}
                 11 -> state.cfg.angle = AngleMode.DEG
                 12 -> state.cfg.angle = AngleMode.RAD
@@ -1040,6 +1075,11 @@ class CalculatorView @JvmOverloads constructor(
 
         dialog.setView(container, 0, 0, 0, 0)
         dialog.show()
+        // AlertDialog 默认按内容自适应宽度，这里强制铺满整屏，否则“全屏显示”并不全屏
+        dialog.window?.setLayout(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        )
     }
 
     // ============ 设置项（由合并后的菜单调用） ============
@@ -1049,7 +1089,8 @@ class CalculatorView @JvmOverloads constructor(
             runCatching {
                 val n = s.trim().toInt().coerceIn(0, 9)
                 state.cfg.dispMode = DispMode.FIX; state.cfg.digits = n
-            }
+                invalidate()
+            }.onFailure { toast("请输入 0-9 的整数") }
         }
     }
     private fun sciDigits() {
@@ -1057,7 +1098,8 @@ class CalculatorView @JvmOverloads constructor(
             runCatching {
                 val n = s.trim().toInt().coerceIn(1, 9)
                 state.cfg.dispMode = DispMode.SCI; state.cfg.digits = n
-            }
+                invalidate()
+            }.onFailure { toast("请输入 1-9 的整数") }
         }
     }
 
@@ -1112,7 +1154,7 @@ class CalculatorView @JvmOverloads constructor(
                 val x = Modes.solveLinear(n, a, b)
                 val names = listOf("x", "y", "z", "t", "u")
                 resultDialog("方程解", (0 until n).joinToString("\n") { "${names[it]} = ${Fmt.num(x[it])}" })
-            }.onFailure { toast("输入格式错误") }
+            }.onFailure { failToast(it) }
         }
     }
     private fun polyEqn(degree: Int) {
@@ -1128,7 +1170,7 @@ class CalculatorView @JvmOverloads constructor(
                     Modes.solveCubic(c[0], c[1], c[2], c[3])
                 }
                 resultDialog("方程的根", roots.mapIndexed { i, r -> "x${i + 1} = ${Fmt.complex(r, state.cfg)}" }.joinToString("\n"))
-            }.onFailure { toast("输入格式错误") }
+            }.onFailure { failToast(it) }
         }
     }
 
@@ -1269,7 +1311,11 @@ class CalculatorView @JvmOverloads constructor(
         }
     }
     private fun vectorUnary(label: String, op: (Vector) -> Unit) {
-        pickVector("选择向量") { a -> vec(a)?.let(op) ?: toast("Vct$a 未定义") }
+        pickVector("选择向量") { a ->
+            val v = vec(a) ?: run { toast("Vct$a 未定义"); return@pickVector }
+            // 单位向量/模等操作可能抛 Math ERROR（如零向量求单位向量），不能让它崩溃
+            runCatching { op(v) }.onFailure { e -> toast(e.message ?: "ERROR") }
+        }
     }
     private fun vectorProj() {
         pickVector("被投影向量 A") { a ->
@@ -1343,9 +1389,10 @@ class CalculatorView @JvmOverloads constructor(
         listDialog("科学常数", Modes.constants.map { "${it.symbol}  ${it.name}" }) { i ->
             val c = Modes.constants[i]
             startFreshIfNeeded()
-            state.tokens.add(NumTok(Complex.fromReal(c.value),
-                java.lang.String.format("%.9g", c.value).replace('e', 'ᴱ')))
-            state.cursor = state.tokens.size
+            // 按光标位置插入（与数字/字母键一致），而不是无条件追加到末尾
+            state.tokens.add(state.cursor, NumTok(Complex.fromReal(c.value),
+                java.lang.String.format(java.util.Locale.US, "%.9g", c.value).replace('e', 'ᴱ')))
+            state.cursor++
             clearResult(); invalidate()
         }
     }

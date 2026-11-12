@@ -1,6 +1,7 @@
 package com.casio.calc
 
 import kotlin.math.*
+import java.util.Locale
 
 /** 显示格式 */
 enum class DispMode { NORM, FIX, SCI, ENG }
@@ -39,7 +40,7 @@ object Fmt {
 
         when (cfg.dispMode) {
             DispMode.FIX -> {
-                val s = String.format("%.${cfg.digits}f", a)
+                val s = String.format(Locale.US, "%.${cfg.digits}f", a)
                 return (if (neg) "-" else "") + trim(s)
             }
             DispMode.SCI -> {
@@ -47,10 +48,10 @@ object Fmt {
                 var exp = floor(log10(a)).toInt()
                 var man = a / 10.0.pow(exp)
                 // 尾数四舍五入进位到 10 时，指数要进一位（999 → 1×10^3 而不是 10×10^2）
-                if (String.format("%.${max(0, cfg.digits - 1)}f", man).toDouble() >= 10.0) {
+                if (String.format(Locale.US, "%.${max(0, cfg.digits - 1)}f", man).toDouble() >= 10.0) {
                     man /= 10.0; exp++
                 }
-                val s = String.format("%.${max(0, cfg.digits - 1)}f", man)
+                val s = String.format(Locale.US, "%.${max(0, cfg.digits - 1)}f", man)
                 return (if (neg) "-" else "") + trim(s) + "×10^" + exp
             }
             DispMode.ENG -> {
@@ -59,7 +60,7 @@ object Fmt {
                 var e3 = e - ((e % 3) + 3) % 3
                 var man = a / 10.0.pow(e3)
                 if (man >= 1000.0 - 5e-4) { man /= 1000.0; e3 += 3 }
-                val s = String.format("%.3f", man)
+                val s = String.format(Locale.US, "%.3f", man)
                 if (e3 == 0) return (if (neg) "-" else "") + trim(s)
                 return (if (neg) "-" else "") + trim(s) + "×10^" + e3
             }
@@ -68,13 +69,13 @@ object Fmt {
                 if (a == 0.0) return "0"
                 var e = floor(log10(a)).toInt()
                 var man = a / 10.0.pow(e)
-                if (String.format("%.9f", man).toDouble() >= 10.0) { man /= 10.0; e++ }
+                if (String.format(Locale.US, "%.9f", man).toDouble() >= 10.0) { man /= 10.0; e++ }
                 val dec = max(0, 9 - e)
-                val fixedS = trim(String.format("%.${dec}f", a))
+                val fixedS = trim(String.format(Locale.US, "%.${dec}f", a))
                 // 固定形式四舍五入后若涨到 1e10 以上（9.99999999999e9 → 10000000000），也要改成科学计数
                 val fixedV = fixedS.toDoubleOrNull() ?: a
                 val s = if (fixedV >= 1e10 || a >= 1e10 || a < 1e-9) {
-                    trim(String.format("%.9f", man)) + "×10^" + e
+                    trim(String.format(Locale.US, "%.9f", man)) + "×10^" + e
                 } else {
                     fixedS
                 }

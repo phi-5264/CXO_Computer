@@ -62,6 +62,8 @@ class Complex(val re: Double, val im: Double = 0.0) {
     }
 
     fun ln(): Complex {
+        // ln(0) 是极点，卡西欧报 Math ERROR（不能返回 -∞ 继续参与运算）
+        if (absv() == 0.0) throw ArithmeticException("Math ERROR")
         if (isReal && re > 0.0) return Complex(kotlin.math.ln(re))
         return Complex(kotlin.math.ln(absv()), arg())
     }

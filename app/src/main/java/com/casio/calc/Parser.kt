@@ -62,6 +62,9 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
                         "P" -> nPr(left, right)
                         else -> left
                     }
+                    // 右操作数末尾的 % 只属于这一项，不能让整个式子误判成 A±B%
+                    // 例如 100+200×10% 应为 120，而不是 110
+                    pctTerm = null
                 }
                 t is AngleTok -> {
                     // 极坐标：a∠θ = a * (cosθ + i·sinθ)，θ 按当前角度制
@@ -69,11 +72,13 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
                     pctTerm = null
                     val ang = parseUnary()
                     left = left * polarUnit(ang)
+                    pctTerm = null
                 }
                 isImplicitStart(t) -> {
                     pctTerm = null
                     val right = parseUnary()
                     left = left * right
+                    pctTerm = null
                 }
                 else -> break
             }
@@ -199,7 +204,11 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
 
     private fun realOnly(a: Complex, block: (Double) -> Double): Complex {
         if (!a.isReal) throw IllegalArgumentException("Math ERROR")
-        return Complex.fromReal(block(a.re))
+        val r = block(a.re)
+        // 定义域外（asin(2)、acosh(0.5)）或极点（atanh(±1)）应报 Math ERROR，
+        // 不能把 NaN/∞ 当作答案继续参与后续运算
+        if (r.isNaN() || r.isInfinite()) throw IllegalArgumentException("Math ERROR")
+        return Complex.fromReal(r)
     }
 
     private fun applyPostfix(v: Complex, op: String): Complex = when (op) {
