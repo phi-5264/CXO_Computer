@@ -45,9 +45,34 @@ class GraphView @JvmOverloads constructor(
                 val c = s[i]
                 when {
                     c.isDigit() || c == '.' -> {
+                        // 只允许一个小数点，避免 "1.2.3" 拼成 "1.2.3" 后 toDouble 抛异常导致崩溃
                         var n = ""
-                        while (i < s.length && (s[i].isDigit() || s[i] == '.')) { n += s[i]; i++ }
-                        out.add(NumTok(Complex.fromReal(n.toDouble()), n))
+                        var dots = 0
+                        while (i < s.length && (s[i].isDigit() || (s[i] == '.' && dots == 0))) {
+                            if (s[i] == '.') dots++
+                            n += s[i]; i++
+                        }
+                        if (n.isEmpty() || n == ".") {
+                            i++   // 孤立的小数点：跳过
+                        } else {
+                            var value = n.toDouble()
+                            var disp = n
+                            // 支持 6.6ᴱ-34 / 6.6E-34 这种科学计数法（常数插入后就是这种文本）
+                            if (i < s.length && (s[i] == 'ᴱ' || s[i] == 'E')) {
+                                var j = i + 1
+                                var neg = false
+                                if (j < s.length && (s[j] == '-' || s[j] == '+' || s[j] == '−')) {
+                                    neg = s[j] == '-' || s[j] == '−'; j++
+                                }
+                                var ex = ""
+                                while (j < s.length && s[j].isDigit()) { ex += s[j]; j++ }
+                                if (ex.isNotEmpty()) {
+                                    value *= 10.0.pow(if (neg) -ex.toDouble() else ex.toDouble())
+                                    disp = s.substring(i - n.length, j); i = j
+                                } else i++
+                            }
+                            out.add(NumTok(Complex.fromReal(value), disp))
+                        }
                     }
                     c == '+' -> { out.add(OpTok("+", "+")); i++ }
                     c == '-' -> { out.add(OpTok("-", "-")); i++ }
@@ -326,13 +351,15 @@ class GraphView @JvmOverloads constructor(
         val w = width.toFloat(); val h = height.toFloat()
         val samples = max(800, width * 2).toInt()
         val step = (xMax - xMin) / samples
+        // 视口被缩放到退化（xMax==xMin）时 step 可能是 0，这里直接返回避免死循环
+        if (!step.isFinite() || step <= 0.0) return
         val path = Path()
         var started = false
         var prevValid = false
         var prevY = 0.0
         var x = xMin
         while (x <= xMax) {
-            val y = evalTokens(f.tokens, mapOf("X" to x, "Y" to 0.0))
+            val y = evalTokens(f.tokens, x)
             val valid = y.isFinite() && !y.isNaN()
             if (valid) {
                 val px = xToPx(x, w); val py = yToPx(y, h)
@@ -387,7 +414,7 @@ class GraphView @JvmOverloads constructor(
             DoubleArray(steps + 1) { j ->
                 val x = -range + i * step
                 val y = -range + j * step
-                val z = evalTokens(f.tokens, mapOf("X" to x, "Y" to y))
+                val z = evalTokens(f.tokens, x, y)
                 if (z.isFinite()) z else Double.NaN
             }
         }
@@ -479,7 +506,8 @@ class GraphView @JvmOverloads constructor(
                 tris.add(Tri(p11, p10, p01, t1d, h1))
             }
         }
-        tris.sortBy { -it.depth }  // 深度小的（远）先画
+        // 画家算法：depth 越大越靠近屏幕，必须先画远的（depth 小）再画近的覆盖上去
+        tris.sortBy { it.depth }
 
         val path = Path()
         for (t in tris) {
@@ -580,15 +608,16 @@ class GraphView @JvmOverloads constructor(
         return nice * mag
     }
 
-    private fun evalTokens(tokens: List<Tok>, vars: Map<String, Double>): Double {
+    /** 复用同一个求值状态与变量表：逐点求值每秒上千次，不能再每次 new CalcState/HashMap */
+    private val evalState = CalcState().apply { cfg.angle = AngleMode.RAD }
+    private val evalVars = HashMap<String, Complex>()
+
+    private fun evalTokens(tokens: List<Tok>, x: Double, y: Double = 0.0): Double {
         if (tokens.isEmpty()) return Double.NaN
-        val s = CalcState(); s.tokens.addAll(tokens)
-        s.cfg.angle = AngleMode.RAD   // 函数图像按弧度求值，否则 sin 等被当作角度制压成近平面
-        s.vars["X"] = Complex.fromReal(vars["X"] ?: 0.0)
-        s.vars["Y"] = Complex.fromReal(vars["Y"] ?: 0.0)
-        val ctx = EvalCtx(s.buildVars(), s.cfg)
+        evalState.vars["X"] = Complex.fromReal(x)
+        evalState.vars["Y"] = Complex.fromReal(y)
         return try {
-            val r = Parser(s.tokens.toList(), ctx).evaluate()
+            val r = Parser(tokens, EvalCtx(evalState.buildVarsInto(evalVars), evalState.cfg)).evaluate()
             if (r.isReal) r.re else r.absv()
         } catch (e: Exception) { Double.NaN }
     }

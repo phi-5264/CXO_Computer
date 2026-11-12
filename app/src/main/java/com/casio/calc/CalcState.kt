@@ -187,8 +187,11 @@ class CalcState {
 
     // ---------- 求值 ----------
 
-    fun buildVars(): Map<String, Complex> {
-        val m = HashMap<String, Complex>()
+    fun buildVars(): Map<String, Complex> = buildVarsInto(HashMap())
+
+    /** 复用同一个 map，避免图形逐点求值时每秒上千次分配 */
+    fun buildVarsInto(m: MutableMap<String, Complex>): Map<String, Complex> {
+        m.clear()
         m.putAll(vars)
         m["A"] = vars["A"] ?: Complex.ZERO
         m["B"] = vars["B"] ?: Complex.ZERO

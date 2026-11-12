@@ -32,40 +32,64 @@ class Matrix(val rows: Int, val cols: Int, val data: Array<DoubleArray>) {
         return Matrix(cols, rows, r)
     }
 
+    /** 行列式：高斯消元 O(n³)。
+     *  原来的递归余子式是 O(n!)，10×10 会在 UI 线程卡死几十秒。 */
     fun det(): Double {
         check(rows == cols) { "Dimension ERROR" }
         val n = rows
         if (n == 1) return data[0][0]
-        if (n == 2) return data[0][0] * data[1][1] - data[0][1] * data[1][0]
-        var d = 0.0
-        for (j in 0 until n) {
-            val sub = Array(n - 1) { DoubleArray(n - 1) }
-            for (i in 1 until n) {
-                var cc = 0
-                for (jj in 0 until n) if (jj != j) sub[i - 1][cc++] = data[i][jj]
+        val a = Array(n) { data[it].clone() }
+        var scale = 0.0
+        for (row in a) for (v in row) scale = max(scale, abs(v))
+        if (scale == 0.0) return 0.0
+        var d = 1.0
+        for (col in 0 until n) {
+            var piv = col
+            for (r in col + 1 until n) if (abs(a[r][col]) > abs(a[piv][col])) piv = r
+            if (abs(a[piv][col]) < 1e-12 * scale) return 0.0
+            if (piv != col) { val t = a[piv]; a[piv] = a[col]; a[col] = t; d = -d }
+            d *= a[col][col]
+            for (r in col + 1 until n) {
+                val f = a[r][col] / a[col][col]
+                if (f != 0.0) for (c in col until n) a[r][c] -= f * a[col][c]
             }
-            d += (if (j % 2 == 0) 1 else -1) * data[0][j] * Matrix(n - 1, n - 1, sub).det()
         }
         return d
     }
 
+    /** 逆矩阵：高斯-约当消元 O(n³) */
     fun inverse(): Matrix {
         val n = rows
         check(n == cols) { "Dimension ERROR" }
-        val d = det()
-        if (abs(d) < 1e-12) throw IllegalArgumentException("Math ERROR")
-        if (n == 1) return Matrix(1, 1, arrayOf(doubleArrayOf(1.0 / d)))
-        // 伴随矩阵法
-        val adj = Array(n) { DoubleArray(n) }
-        for (i in 0 until n) for (j in 0 until n) {
-            val sub = Array(n - 1) { DoubleArray(n - 1) }
-            for (ii in 0 until n) if (ii != i)
-                for (jj in 0 until n) if (jj != j)
-                    sub[if (ii < i) ii else ii - 1][if (jj < j) jj else jj - 1] = data[ii][jj]
-            adj[j][i] = (if ((i + j) % 2 == 0) 1 else -1) * Matrix(n - 1, n - 1, sub).det()
+        if (n == 1) {
+            if (abs(data[0][0]) < 1e-12) throw IllegalArgumentException("Math ERROR")
+            return Matrix(1, 1, arrayOf(doubleArrayOf(1.0 / data[0][0])))
         }
-        for (i in 0 until n) for (j in 0 until n) adj[i][j] /= d
-        return Matrix(n, n, adj)
+        val a = Array(n) { data[it].clone() }
+        val inv = Array(n) { DoubleArray(n) }
+        for (i in 0 until n) inv[i][i] = 1.0
+        var scale = 0.0
+        for (row in a) for (v in row) scale = max(scale, abs(v))
+        if (scale == 0.0) throw IllegalArgumentException("Math ERROR")
+        for (col in 0 until n) {
+            var piv = col
+            for (r in col + 1 until n) if (abs(a[r][col]) > abs(a[piv][col])) piv = r
+            if (abs(a[piv][col]) < 1e-12 * scale) throw IllegalArgumentException("Math ERROR")
+            if (piv != col) {
+                val t = a[piv]; a[piv] = a[col]; a[col] = t
+                val u = inv[piv]; inv[piv] = inv[col]; inv[col] = u
+            }
+            val pv = a[col][col]
+            for (c in 0 until n) { a[col][c] /= pv; inv[col][c] /= pv }
+            for (r in 0 until n) if (r != col) {
+                val f = a[r][col]
+                if (f != 0.0) for (c in 0 until n) {
+                    a[r][c] -= f * a[col][c]
+                    inv[r][c] -= f * inv[col][c]
+                }
+            }
+        }
+        return Matrix(n, n, inv)
     }
 
     fun toStringFmt(): String {
