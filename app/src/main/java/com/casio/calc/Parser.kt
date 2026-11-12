@@ -187,7 +187,8 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         "ex", "exp" -> a.exp()
         "tenx" -> (Complex.fromReal(ln(10.0)) * a).exp()
         "abs" -> Complex.fromReal(a.absv())
-        "arg" -> Complex.fromReal(a.arg())
+        // Arg 是角度，必须跟角度制换算（DEG 下 Arg(i)=90，而不是 1.571）
+        "arg" -> fromAng(Complex.fromReal(a.arg()))
         "conjg" -> a.conj()
         "re" -> Complex.fromReal(a.re)
         "im" -> Complex.fromReal(a.im)
@@ -260,6 +261,8 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         if (!c.isReal) throw IllegalArgumentException("Math ERROR")
         val v = round(c.re)
         if (abs(v - c.re) > 1e-9) throw IllegalArgumentException("Math ERROR")
+        // toInt() 对 1e20 会饱和成 Int.MAX_VALUE，nCr/nPr 会算出假结果
+        if (abs(v) > 1e9) throw IllegalArgumentException("Math ERROR")
         return v.toInt()
     }
 
@@ -288,7 +291,14 @@ object Calc {
             771.32342877765313, -176.61502916214059, 12.507343278686905,
             -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
         )
-        if (x < 0.5) return PI / (sin(PI * x) * gamma(1.0 - x))
+        // 大参数时直接算幂会先溢出（170! 的中间量 177.5^170 ≈ 1e382），改走对数域
+        if (x > 150.0) {
+            var z = x - 1.0
+            var la = c[0]
+            for (i in 1 until g + 2) la += c[i] / (z + i)
+            val t = z + g + 0.5
+            return exp(0.5 * ln(2.0 * PI) + (z + 0.5) * ln(t) - t + ln(la))
+        }
         var z = x - 1.0
         var a = c[0]
         val t = z + g + 0.5

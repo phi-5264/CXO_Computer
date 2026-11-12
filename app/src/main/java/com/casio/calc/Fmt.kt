@@ -69,11 +69,14 @@ object Fmt {
                 var e = floor(log10(a)).toInt()
                 var man = a / 10.0.pow(e)
                 if (String.format("%.9f", man).toDouble() >= 10.0) { man /= 10.0; e++ }
-                val s = if (a >= 1e12 || a < 1e-9) {
+                val dec = max(0, 9 - e)
+                val fixedS = trim(String.format("%.${dec}f", a))
+                // 固定形式四舍五入后若涨到 1e10 以上（9.99999999999e9 → 10000000000），也要改成科学计数
+                val fixedV = fixedS.toDoubleOrNull() ?: a
+                val s = if (fixedV >= 1e10 || a >= 1e10 || a < 1e-9) {
                     trim(String.format("%.9f", man)) + "×10^" + e
                 } else {
-                    val dec = max(0, 9 - e)
-                    trim(String.format("%.${dec}f", a))
+                    fixedS
                 }
                 val out = if (neg) "-$s" else s
                 // 只把真正的 -0 归成 0；不能按前缀判断，否则 -0.5 之类会整段变成 0

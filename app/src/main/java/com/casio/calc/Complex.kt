@@ -72,6 +72,8 @@ class Complex(val re: Double, val im: Double = 0.0) {
         // 实数底数：负数的整数次幂也应走实数路线（Math.pow 对负底的整数指数是正确的），
         // 否则会被 exp(ln) 复数路线带入虚假虚部，导致结果变成复数或 NaN。
         if (e.isReal && isReal) {
+            // 0 的负数次幂 = 1/0，应与 1÷0 一样报 Math ERROR，而不是给出 ∞
+            if (re == 0.0 && e.re < 0) throw ArithmeticException("Math ERROR")
             val r = re.pow(e.re)
             if (!r.isNaN()) return Complex(r)
         }
