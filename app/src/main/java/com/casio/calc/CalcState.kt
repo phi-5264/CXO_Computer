@@ -119,6 +119,15 @@ class CalcState {
 
     fun inputOperator(opSym: String) {
         val disp = when (opSym) { "C" -> "nCr"; "P" -> "nPr"; else -> opSym }
+        // 末尾已是二元运算符时直接替换，避免 2+×3 这种"多按一次"变成语法错误
+        // （"-" 视为负号，允许 2^-3、2×-3 这类输入，不做替换）
+        if (cursor > 0 && cursor == tokens.size && opSym != "-") {
+            val l = tokens[cursor - 1]
+            if (l is OpTok && l.op != "-") {
+                tokens[cursor - 1] = OpTok(opSym, disp)
+                return
+            }
+        }
         insert(OpTok(opSym, disp))
     }
 
@@ -222,9 +231,11 @@ class CalcState {
     }
 
     companion object {
-        fun formatNum(v: Double): String =
-            if (v == kotlin.math.floor(v) && !v.isInfinite()) {
-                if (v == 0.0) "0" else v.toLong().toString()
-            } else v.toString()
+        fun formatNum(v: Double): String = when {
+            v == 0.0 -> "0"
+            // 超出 Long 范围时 toLong() 会饱和成 9.2e18，必须走普通格式
+            v == kotlin.math.floor(v) && !v.isInfinite() && kotlin.math.abs(v) < 1e15 -> v.toLong().toString()
+            else -> v.toString()
+        }
     }
 }

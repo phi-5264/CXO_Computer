@@ -722,8 +722,12 @@ class CalculatorView @JvmOverloads constructor(
 
     // ============ 存储 / 调取 ============
 
+    /** STO/RCL 可用的变量名：26 个字母（字母菜单能输入的都能存）+ 向量 */
+    private val storeNames: List<String> =
+        ('A'..'Z').map { it.toString() } + listOf("VctA", "VctB", "VctC")
+
     private fun showStoreDialog() {
-        val names = listOf("A", "B", "C", "D", "E", "F", "X", "Y", "M", "VctA", "VctB", "VctC")
+        val names = storeNames
         listDialog("STO 存入变量", names) { i ->
             val v = if (state.tokens.isEmpty()) state.ans else {
                 try { Parser(state.tokens.toList(), EvalCtx(state.buildVars(), state.cfg)).evaluate() }
@@ -737,7 +741,7 @@ class CalculatorView @JvmOverloads constructor(
     }
 
     private fun showRecallDialog() {
-        val names = listOf("A", "B", "C", "D", "E", "F", "X", "Y", "M", "VctA", "VctB", "VctC")
+        val names = storeNames
         listDialog("RCL 调取变量", names) { i ->
             startFreshIfNeeded(); state.inputVar(names[i]); clearResult(); invalidate()
         }
@@ -1103,6 +1107,8 @@ class CalculatorView @JvmOverloads constructor(
                 val d = parseDoubles(s)
                 if (d.size != 2 || d[0].toInt() <= 0 || d[1].toInt() <= 0) { toast("维度格式错误"); return@runCatching }
                 val rows = d[0].toInt(); val cols = d[1].toInt()
+                // 限制规模，避免超大矩阵把内存/界面拖垮
+                if (rows > 10 || cols > 10 || rows * cols > 100) { toast("矩阵最大 10×10 且元素不超过 100"); return@runCatching }
                 inputDialog("$name 元素", "按行输入 ${rows * cols} 个数，空格分隔") { v ->
                     runCatching {
                         val vals = parseDoubles(v)
@@ -1118,7 +1124,9 @@ class CalculatorView @JvmOverloads constructor(
         pickMatrix("左矩阵") { a ->
             matrixOf(a) ?: run { toast("Mat$a 未定义"); return@pickMatrix }
             pickMatrix("右矩阵") { b ->
-                val ma = matrixOf(a)!!; val mb = matrixOf(b)!!
+                val mb = matrixOf(b)
+                if (mb == null) { toast("Mat$b 未定义"); return@pickMatrix }
+                val ma = matrixOf(a)!!
                 runCatching { val r = if (op == "+") ma + mb else ma * mb
                     resultDialog("结果", r.toStringFmt()) }
                 .onFailure { e -> toast(e.message ?: "Dimension ERROR") }

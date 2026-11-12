@@ -31,7 +31,7 @@ object Keypad {
             k("x⁻¹", "inv"),
             k("x²", "sq", alpha = "C", alphaAction = "C"),
             k("x³", "cube", alpha = "D", alphaAction = "D"),
-            k("x^□", "pow"),
+            k("x^□", "pow", alpha = "E", alphaAction = "E"),
             k("√", "sqrt", "³√", "cbrt"),
             k("DEL", "del")
         ),
