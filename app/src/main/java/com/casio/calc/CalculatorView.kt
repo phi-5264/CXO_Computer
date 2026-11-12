@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.*
 import android.text.InputType
 import android.util.AttributeSet
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
@@ -85,10 +86,19 @@ class CalculatorView @JvmOverloads constructor(
 
     /** 按键顶部高光（复用，避免每帧为每个按键 new Paint/RectF） */
     private val brushKeyHighlight = Paint().apply {
-        color = Color.argb(30, 255, 255, 255)
+        color = Color.argb(38, 255, 255, 255)
         style = Paint.Style.STROKE
     }
+    /** 按键底部投影，制造凸起感 */
+    private val brushKeyShadow = Paint().apply {
+        color = Color.argb(90, 0, 0, 0)
+        style = Paint.Style.FILL
+    }
     private val tmpRect = RectF()
+
+    /** 当前按下的按键（-1 表示无），用于按下高亮 */
+    private var pressedRow = -1
+    private var pressedCol = -1
 
     private val density = resources.displayMetrics.density
     private fun dp(v: Float) = v * density
@@ -157,11 +167,14 @@ class CalculatorView @JvmOverloads constructor(
 
         brushCursorBlink.color = COLOR_LCD_DARK
 
-        brushPrimary.color = COLOR_WHITE; brushPrimary.typeface = Typeface.DEFAULT_BOLD
-        brushPrimarySmall.color = COLOR_WHITE; brushPrimarySmall.typeface = Typeface.DEFAULT_BOLD
+        // 按键统一使用无衬线粗体，避免部分 ROM 把 DEFAULT_BOLD 映射成衬线体，
+        // 与真机按键字体差异过大
+        val keyTypeface = Typeface.create("sans-serif", Typeface.BOLD)
+        brushPrimary.color = COLOR_WHITE; brushPrimary.typeface = keyTypeface
+        brushPrimarySmall.color = COLOR_WHITE; brushPrimarySmall.typeface = keyTypeface
 
-        brushShift.color = COLOR_SHIFT; brushShift.typeface = Typeface.DEFAULT_BOLD
-        brushAlpha.color = COLOR_ALPHA; brushAlpha.typeface = Typeface.DEFAULT_BOLD
+        brushShift.color = COLOR_SHIFT; brushShift.typeface = keyTypeface
+        brushAlpha.color = COLOR_ALPHA; brushAlpha.typeface = keyTypeface
 
         brushKeyNum.style = Paint.Style.FILL; brushKeyOp.style = Paint.Style.FILL
         brushKeyFunc.style = Paint.Style.FILL; brushKeyAccent.style = Paint.Style.FILL
@@ -206,7 +219,8 @@ class CalculatorView @JvmOverloads constructor(
         displayRect = RectF(margin, margin, w - margin, margin + dispH)
 
         val keypadTop = displayRect.bottom + dp(14f)
-        val bottom = h - dp(8f)
+        // 底部留出 12dp，避免最后一行贴住屏幕/手势条
+        val bottom = h - dp(12f)
         val keypadH = bottom - keypadTop
         val rows = Keypad.rows.size
         val rowH = keypadH / rows
@@ -458,54 +472,87 @@ class CalculatorView @JvmOverloads constructor(
 
     /** 绘制单个按键（美化版） */
     private fun paintKey(canvas: Canvas, r: RectF, key: Key, row: Int, col: Int) {
-        // 按键颜色
-        val color = keyColor(key.action, key.primary)
-        brushKey.color = color
-        brushKey.style = Paint.Style.FILL
-        // 圆角 + 轻微阴影感
-        canvas.drawRoundRect(r, dp(10f), dp(10f), brushKey)
+        val radius = dp(10f)
 
-        // 按压效果：顶部高光
-        // 注意 r.height() 已是像素，不能再经过 dp() 放大
-        tmpRect.set(
-            r.left + dp(1f), r.top + dp(1f),
-            r.right - dp(1f), r.top + r.height() * 0.3f
+        // 底部投影：向下错开 1.5dp 画一层暗色，形成按键凸起感
+        canvas.drawRoundRect(
+            r.left, r.top + dp(1.5f), r.right, r.bottom + dp(1.5f),
+            radius, radius, brushKeyShadow
         )
-        canvas.drawRoundRect(tmpRect, dp(10f), dp(10f), brushKeyHighlight)
+
+        // 按键主体
+        brushKey.color = keyColor(key.action, key.primary)
+        brushKey.style = Paint.Style.FILL
+        canvas.drawRoundRect(r, radius, radius, brushKey)
+
+        // 按下高亮
+        if (row == pressedRow && col == pressedCol) {
+            brushKeyHighlight.color = Color.argb(46, 255, 255, 255)
+            brushKeyHighlight.style = Paint.Style.FILL
+            canvas.drawRoundRect(r, radius, radius, brushKeyHighlight)
+        }
+
+        // 顶部高光：只保留上边缘的亮弧。
+        // 原实现画的是 30% 高度的整圈描边，底部那条直线会把按键切成两半。
+        brushKeyHighlight.color = Color.argb(38, 255, 255, 255)
+        brushKeyHighlight.style = Paint.Style.STROKE
+        brushKeyHighlight.strokeWidth = dp(1f)
+        canvas.save()
+        canvas.clipRect(r.left, r.top, r.right, r.top + radius)
+        tmpRect.set(
+            r.left + dp(0.5f), r.top + dp(0.5f),
+            r.right - dp(0.5f), r.bottom - dp(0.5f)
+        )
+        canvas.drawRoundRect(tmpRect, radius, radius, brushKeyHighlight)
+        canvas.restore()
 
         // 主标签
         val cx = r.centerX()
-        val cy = r.centerY()
+        val hasCornerLabel = key.shift.isNotEmpty() || key.alpha.isNotEmpty()
+        // 有上档标签时主标签略下移，避免与左上/右上小字挤在一起
+        val cy = if (hasCornerLabel) r.centerY() + dp(4f) else r.centerY()
         brushPrimary.textAlign = Paint.Align.CENTER
 
         // 特殊按键更大字
         when (key.action) {
             "eq" -> brushPrimary.textSize = dp(24f)
-            "ac" -> brushPrimary.textSize = dp(20f)
-            "del" -> brushPrimary.textSize = dp(20f)
+            "ac", "del" -> brushPrimary.textSize = dp(20f)
             "shift", "alpha" -> brushPrimary.textSize = dp(13f)
-            "abc" -> brushPrimary.textSize = dp(15f)
-            "mode" -> brushPrimary.textSize = dp(15f)
-            in listOf("7","8","9","4","5","6","1","2","3","0") -> brushPrimary.textSize = dp(22f)
+            "abc", "mode" -> brushPrimary.textSize = dp(15f)
+            "mul", "div", "add", "sub" -> brushPrimary.textSize = dp(21f)
+            in listOf("7","8","9","4","5","6","1","2","3","0") -> brushPrimary.textSize = dp(23f)
             else -> brushPrimary.textSize = dp(17f)
         }
 
-        // 上下居中
-        val textHeight = brushPrimary.descent() - brushPrimary.ascent()
-        val topPos = cy - textHeight / 2f - brushPrimary.ascent()
-        canvas.drawText(key.primary, cx, topPos, brushPrimary)
-        // SHIFT 标签（左上）
+        // 上下居中（用 ascent+descent 的中线，比只看行高更准）
+        val baseline = cy - (brushPrimary.ascent() + brushPrimary.descent()) / 2f
+        canvas.drawText(key.primary, cx, baseline, brushPrimary)
+
+        // 角落标签：左右各占一半宽度，超出时自动缩字号，防止 sin⁻¹ 与 sinh 挤在一起溢出
+        val cornerMax = if (key.shift.isNotEmpty() && key.alpha.isNotEmpty())
+            (r.width() - dp(14f)) / 2f else r.width() - dp(14f)
         if (key.shift.isNotEmpty()) {
             brushShift.textAlign = Paint.Align.LEFT
-            brushShift.textSize = dp(10f)
-            canvas.drawText(key.shift, r.left + dp(4f), r.top + dp(12f), brushShift)
+            drawCornerLabel(canvas, key.shift, r.left + dp(7f), r.top + dp(14f), brushShift, cornerMax)
         }
-        // ALPHA 标签（右上）
         if (key.alpha.isNotEmpty()) {
             brushAlpha.textAlign = Paint.Align.RIGHT
-            brushAlpha.textSize = dp(10f)
-            canvas.drawText(key.alpha, r.right - dp(4f), r.top + dp(12f), brushAlpha)
+            drawCornerLabel(canvas, key.alpha, r.right - dp(7f), r.top + dp(14f), brushAlpha, cornerMax)
         }
+    }
+
+    /** 角落小标签：从 10dp 起，放不下就等比缩小（不低于 7dp） */
+    private fun drawCornerLabel(
+        canvas: Canvas, text: String, x: Float, baseline: Float, paint: Paint, maxW: Float
+    ) {
+        var size = dp(10f)
+        paint.textSize = size
+        val w = paint.measureText(text)
+        if (maxW > 0f && w > maxW) {
+            size = (size * maxW / w).coerceAtLeast(dp(7f))
+            paint.textSize = size
+        }
+        canvas.drawText(text, x, baseline, paint)
     }
 
     private fun drawRight(canvas: Canvas, text: String, paint: Paint, left: Float, right: Float, baseline: Float) {
@@ -621,10 +668,20 @@ class CalculatorView @JvmOverloads constructor(
                 val rects = keyRects[i]
                 for (j in rects.indices) {
                     if (rects[j].contains(x, y)) {
+                        pressedRow = i; pressedCol = j
+                        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         onKey(Keypad.rows[i][j])
+                        invalidate()
                         return true
                     }
                 }
+            }
+        }
+        if (event.actionMasked == MotionEvent.ACTION_UP ||
+            event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            if (pressedRow >= 0) {
+                pressedRow = -1; pressedCol = -1
+                invalidate()
             }
         }
         return true
