@@ -197,11 +197,30 @@ class GraphView @JvmOverloads constructor(
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             val f = detector.scaleFactor.toDouble()
-            if (mode2D) zoomBy(f)
+            if (mode2D) zoom2DAt(detector.focusX.toDouble(), detector.focusY.toDouble(), f)
             else zoom3DAt(detector.focusX.toDouble(), detector.focusY.toDouble(), f)
             return true
         }
     })
+
+    /** 以屏幕点 (fx,fy) 为锚点缩放 2D 图像，手指下的位置保持不动 */
+    fun zoom2DAt(fx: Double, fy: Double, factor: Double) {
+        if (!factor.isFinite() || factor <= 0.0) return
+        val spanX = xMax - xMin
+        val spanY = yMax - yMin
+        if (!spanX.isFinite() || !spanY.isFinite() || spanX <= 0.0 || spanY <= 0.0) return
+        val w = width.toDouble().coerceAtLeast(1.0)
+        val h = height.toDouble().coerceAtLeast(1.0)
+        // 锚点相对屏幕的比例（限制在画面内，双指移到边缘外时也不会把视野甩飞）
+        val sx = (fx / w).coerceIn(0.0, 1.0)
+        val sy = (fy / h).coerceIn(0.0, 1.0)
+        val wx = xMin + sx * spanX
+        val wy = yMax - sy * spanY
+        val newSpanX = (spanX / factor).coerceIn(2e-6, 2e12)
+        val newSpanY = (spanY / factor).coerceIn(2e-6, 2e12)
+        xMin = wx - sx * newSpanX; xMax = xMin + newSpanX
+        yMax = wy + sy * newSpanY; yMin = yMax - newSpanY
+    }
 
     /** 缩放 */
     fun zoomBy(factor: Double) {
@@ -258,11 +277,22 @@ class GraphView @JvmOverloads constructor(
                 lastFocusX = f.first; lastFocusY = f.second
             }
             MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount >= 2 && !mode2D) {
-                    // 双指拖动平移 3D 画面
+                if (event.pointerCount >= 2) {
+                    // 双指拖动：3D 平移画面，2D 平移视野（与缩放同时生效，手感更自然）
                     val f = focusOf(event)
-                    panSx += (f.first - lastFocusX).toDouble()
-                    panSy += (f.second - lastFocusY).toDouble()
+                    val dx = (f.first - lastFocusX).toDouble()
+                    val dy = (f.second - lastFocusY).toDouble()
+                    if (mode2D) {
+                        val w = width.toDouble().coerceAtLeast(1.0)
+                        val h = height.toDouble().coerceAtLeast(1.0)
+                        val spanX = (xMax - xMin) * dx / w
+                        val spanY = (yMax - yMin) * dy / h
+                        xMin -= spanX; xMax -= spanX
+                        yMin += spanY; yMax += spanY
+                    } else {
+                        panSx += dx
+                        panSy += dy
+                    }
                     lastFocusX = f.first; lastFocusY = f.second
                     invalidate()
                 } else if (event.pointerCount == 1 && !scaleDetector.isInProgress) {

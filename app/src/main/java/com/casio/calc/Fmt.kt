@@ -40,8 +40,9 @@ object Fmt {
 
         when (cfg.dispMode) {
             DispMode.FIX -> {
+                // FIX 模式必须保留固定的小数位数（1.50 不能显示成 1.5）
                 val s = String.format(Locale.US, "%.${cfg.digits}f", a)
-                return (if (neg) "-" else "") + trim(s)
+                return (if (neg) "-" else "") + s
             }
             DispMode.SCI -> {
                 if (a == 0.0) return "0"
@@ -52,7 +53,8 @@ object Fmt {
                     man /= 10.0; exp++
                 }
                 val s = String.format(Locale.US, "%.${max(0, cfg.digits - 1)}f", man)
-                return (if (neg) "-" else "") + trim(s) + "×10^" + exp
+                // SCI 模式同样保留有效位尾零（1.50×10^3）
+                return (if (neg) "-" else "") + s + "×10^" + exp
             }
             DispMode.ENG -> {
                 if (a == 0.0) return "0"

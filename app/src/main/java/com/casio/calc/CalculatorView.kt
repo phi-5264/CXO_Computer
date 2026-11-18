@@ -905,7 +905,8 @@ class CalculatorView @JvmOverloads constructor(
         )
         listDialog("菜单 / 设置", items) { i ->
             when (i) {
-                0, 1 -> state.mode = Mode.COMP
+                0 -> state.mode = Mode.COMP
+                1 -> { state.mode = Mode.COMP; state.cfg.complexForm = ComplexForm.RECT }
                 2 -> { state.mode = Mode.STAT; showStatMenu() }
                 3 -> { state.mode = Mode.EQN; showEqnMenu() }
                 4 -> { state.mode = Mode.MATRIX; showMatrixMenu() }

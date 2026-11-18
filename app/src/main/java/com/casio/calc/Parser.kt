@@ -12,9 +12,8 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
     fun evaluate(): Complex {
         if (toks.isEmpty()) throw IllegalArgumentException("Syntax ERROR")
         val r = parseExpr()
-        // 自动闭合未闭合的括号
-        while (peek() is RpTok) next()
-        // 还有剩余令牌说明式子里有多余内容（如 2)3），不能静默丢弃
+        // 未闭合的左括号允许自动补全；但多余的右括号（如 1)）应当报语法错误
+
         if (pos < toks.size) throw IllegalArgumentException("Syntax ERROR")
         return r.cleaned()
     }

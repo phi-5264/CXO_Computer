@@ -11,8 +11,8 @@ android {
         applicationId = "com.casio.calc"
         minSdk = 24
         targetSdk = 34
-        versionCode = 17
-        versionName = "4.10"
+        versionCode = 18
+        versionName = "4.11"
     }
 
     signingConfigs {
@@ -42,4 +42,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
 }
