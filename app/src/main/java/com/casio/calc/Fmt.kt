@@ -95,22 +95,24 @@ object Fmt {
         return t
     }
 
-    /** 极坐标显示：r∠θ（θ 跟随当前角度制） */
-    fun polar(c: Complex, cfg: CalcConfig): String {
-        val r = c.absv()
-        val a = c.arg()
-        val th = when (cfg.angle) {
-            AngleMode.DEG -> Math.toDegrees(a)
-            AngleMode.RAD -> a
-            AngleMode.GRA -> a * 200.0 / PI
+    /** 把弧度按当前角度制格式化并带单位（向量夹角、极角等） */
+    fun angle(rad: Double, cfg: CalcConfig): String {
+        val v = when (cfg.angle) {
+            AngleMode.DEG -> Math.toDegrees(rad)
+            AngleMode.RAD -> rad
+            AngleMode.GRA -> rad * 200.0 / PI
         }
         val unit = when (cfg.angle) {
             AngleMode.DEG -> "°"
             AngleMode.RAD -> " rad"
             AngleMode.GRA -> "g"
         }
-        return real(r, cfg) + "∠" + real(th, cfg) + unit
+        return real(v, cfg) + unit
     }
+
+    /** 极坐标显示：r∠θ（θ 跟随当前角度制） */
+    fun polar(c: Complex, cfg: CalcConfig): String =
+        real(c.absv(), cfg) + "∠" + angle(c.arg(), cfg)
 
     /** 直角坐标形式：a+bi, a-bi, a, bi
      *  实/虚部是否显示按相对量级判断（1e-15，约几个 ulp），避免 i×1e-15 这类真实小虚部被当成 0，

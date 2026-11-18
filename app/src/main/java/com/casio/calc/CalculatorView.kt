@@ -1363,7 +1363,7 @@ class CalculatorView @JvmOverloads constructor(
             val va = vec(a) ?: run { toast("Vct$a 未定义"); return@pickVector }
             pickVector("第二个向量") { b ->
                 val vb = vec(b) ?: run { toast("Vct$b 未定义"); return@pickVector }
-                runCatching { resultDialog("夹角", "${Fmt.num(va.angleDeg(vb))}°") }
+                runCatching { resultDialog("夹角", Fmt.angle(va.angleRad(vb), state.cfg)) }
                     .onFailure { e -> toast(e.message ?: "ERROR") }
             }
         }

@@ -157,12 +157,12 @@ class Vector(val comps: List<Complex>) {
         return o * (dot(o) / Complex.fromReal(n2))
     }
 
-    /** 夹角（度） */
-    fun angleDeg(o: Vector): Double {
+    /** 夹角（弧度） */
+    fun angleRad(o: Vector): Double {
         val n = norm() * o.norm()
         if (n < 1e-12) throw IllegalArgumentException("Math ERROR")
         val cosT = (dot(o).re / n).coerceIn(-1.0, 1.0)
-        return Math.toDegrees(acos(cosT))
+        return acos(cosT)
     }
 
     /** 2D 向量 → 复数 x + yi */

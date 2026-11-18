@@ -158,9 +158,15 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
     }
 
     private fun parseFunction(f: FnTok): Complex {
-        if (peek() is LpTok) next()
-        val arg = nested { parseExpr() }
-        if (peek() is RpTok) next()
+        if (peek() is LpTok) {
+            next()
+            val arg = nested { parseExpr() }
+            if (peek() is RpTok) next()
+            return apply(f.fn, arg)
+        }
+        // 省略括号时（如 sin 30）只吃一个一元操作数；
+        // 否则 sin X + 2 会被误解析成 sin(X+2)
+        val arg = nested { parseUnary() }
         return apply(f.fn, arg)
     }
 

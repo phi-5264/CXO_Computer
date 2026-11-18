@@ -167,4 +167,47 @@ class CalcTest {
         assertEquals(273.15, Modes.convertUnit(0.0, c, k), 1e-9)
         assertEquals(-273.15, Modes.convertUnit(0.0, k, c), 1e-9)
     }
+
+    @Test
+    fun `向量夹角跟随角度制`() {
+        val a = Vector.fromReals(doubleArrayOf(3.0, 0.0))
+        val b = Vector.fromReals(doubleArrayOf(0.0, 4.0))
+        val rad = a.angleRad(b)
+
+        val deg = CalcConfig().apply { angle = AngleMode.DEG }
+        val r = CalcConfig().apply { angle = AngleMode.RAD }
+        val gra = CalcConfig().apply { angle = AngleMode.GRA }
+
+        assertEquals("90°", Fmt.angle(rad, deg))
+        assertEquals("1.570796327 rad", Fmt.angle(rad, r))
+        assertEquals("100g", Fmt.angle(rad, gra))
+    }
+
+    @Test
+    fun `零向量夹角报错`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            Vector.fromReals(doubleArrayOf(0.0, 0.0))
+                .angleRad(Vector.fromReals(doubleArrayOf(1.0, 0.0)))
+        }
+    }
+
+    @Test
+    fun `极坐标角度跟随角度制`() {
+        val z = Complex(0.0, 1.0)
+        assertEquals("1∠90°", Fmt.polar(z, CalcConfig().apply { angle = AngleMode.DEG }))
+        assertEquals("1∠100g", Fmt.polar(z, CalcConfig().apply { angle = AngleMode.GRA }))
+    }
+
+    @Test
+    fun `省略函数括号只取一个操作数`() {
+        val deg = CalcConfig().apply { angle = AngleMode.DEG }
+        // sin 30 = 0.5
+        assertEquals(0.5, eval(FnTok("sin", "sin"), num(30.0), cfg = deg).re, 1e-12)
+        // sin 30 + 2 = 2.5（不能被解析成 sin(32)）
+        assertEquals(2.5, eval(FnTok("sin", "sin"), num(30.0), op("+"), num(2.0), cfg = deg).re, 1e-12)
+        // 2sin 30 = 1（隐式乘法 + 无括号函数）
+        assertEquals(1.0, eval(num(2.0), FnTok("sin", "sin"), num(30.0), cfg = deg).re, 1e-12)
+        // √9 + 1 = 4（不能变成 √10）
+        assertEquals(4.0, eval(FnTok("sqrt", "√"), num(9.0), op("+"), num(1.0)).re, 1e-12)
+    }
 }
