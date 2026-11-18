@@ -113,16 +113,17 @@ object Fmt {
     }
 
     /** 直角坐标形式：a+bi, a-bi, a, bi
-     *  实/虚部是否显示按相对量级判断，避免 i×1e-15 这类真实小虚部被当成 0。 */
+     *  实/虚部是否显示按相对量级判断（1e-15，约几个 ulp），避免 i×1e-15 这类真实小虚部被当成 0，
+     *  也避免 1e15+1i 这种虚部被巨大的实部吞掉。 */
     fun rect(c: Complex, cfg: CalcConfig): String {
         val re = c.re
         val im = tidy(c.im)
         // 非有限值直接按实部显示（Math ERROR / ∞），避免 Inf 参与量级比较后被误判成 0
         if (!re.isFinite() || im.isNaN() || im.isInfinite()) return real(re, cfg)
         val mag = max(abs(re), abs(im))
-        val eps = if (mag == 0.0) 0.0 else 1e-12 * mag
-        val reZero = abs(re) <= eps
-        val imZero = abs(im) <= eps
+        val eps = if (mag == 0.0) 0.0 else 1e-15 * mag
+        val reZero = abs(re) < eps
+        val imZero = abs(im) < eps
         if (imZero) return real(if (reZero) 0.0 else re, cfg)
         val imStr = real(abs(im), cfg)
         val coeff = if (imStr == "1") "" else imStr
@@ -140,11 +141,11 @@ object Fmt {
         return rect(c, cfg)
     }
 
-    /** 虚部是否可忽略（相对量级） */
+    /** 虚部是否可忽略（相对量级，阈值与 rect 保持一致） */
     private fun isRealPart(c: Complex): Boolean {
         if (!c.re.isFinite() || !c.im.isFinite()) return true
         val mag = max(abs(c.re), abs(c.im))
-        return mag == 0.0 || abs(c.im) <= 1e-12 * mag
+        return mag == 0.0 || abs(c.im) < 1e-15 * mag
     }
 
     /** 双形式显示：主形式 + 括号内附另一种形式（仅含虚部时） */

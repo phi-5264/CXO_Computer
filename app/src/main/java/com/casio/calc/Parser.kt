@@ -115,6 +115,8 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
         if (t is OpTok && t.op == "^") {
             next()
             val e = parseUnary()
+            // 幂运算后该值已不再是「纯百分数」，100+10%^2 应为 100+0.01，而不是 110
+            pctTerm = null
             return base.pow(e)
         }
         return base
@@ -127,6 +129,8 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
             if (t is PostTok) {
                 next()
                 v = applyPostfix(v, t.op)
+                // 平方/阶乘等后续后缀会改变数值语义，% 不再代表整个右操作数
+                if (t.op != "percent") pctTerm = null
             } else break
         }
         return v
@@ -143,7 +147,7 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
                 else -> throw IllegalArgumentException("Syntax ERROR")
             }
             is VarTok -> ctx.vars[t.name] ?: Complex.ZERO
-            is LpTok -> {
+            is LpTok -> nested {
                 val v = parseExpr()
                 if (peek() is RpTok) next()
                 v
@@ -155,25 +159,43 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
 
     private fun parseFunction(f: FnTok): Complex {
         if (peek() is LpTok) next()
-        val arg = parseExpr()
+        val arg = nested { parseExpr() }
         if (peek() is RpTok) next()
         return apply(f.fn, arg)
     }
 
+    /** 进入括号/函数参数等嵌套表达式：暂存并清空百分号状态，返回后再恢复。
+     *  否则 100+(10%)、100+sin(10%) 里的 % 会泄漏到外层，
+     *  被误当成「右操作数整体是百分数」而算成 110/110，正确结果应为 100.1/100.0998。 */
+    private fun nested(block: () -> Complex): Complex {
+        val saved = pctTerm
+        pctTerm = null
+        try {
+            return block()
+        } finally {
+            pctTerm = saved
+        }
+    }
+
     /** 三角函数特殊角归零：sin(180°)、cos(90°)、tan(180°) 等理论值为 0 的角，
-     *  浮点算出来是 1e-16 量级的噪声，这里按输出归零，避免显示成 1.2×10^-16。 */
-    private fun snapTrig(c: Complex): Complex =
-        if (c.isReal && abs(c.re) < 1e-12) Complex.ZERO else c
+     *  浮点算出来是 1e-16 量级的噪声，这里按输出归零，避免显示成 1.2×10^-16。
+     *  只对「参数确实落在 π/2 的整数倍上」的情况归零：
+     *  sin(1e-13) 这类真实小值必须原样保留，不能被绝对阈值抹成 0。 */
+    private fun snapTrig(c: Complex, angRad: Complex): Complex {
+        if (!c.isReal || abs(c.re) >= 1e-12 || !angRad.isReal) return c
+        val k = angRad.re / (PI / 2.0)
+        return if (abs(k) >= 0.5 && abs(k - round(k)) < 1e-9) Complex.ZERO else c
+    }
 
     private fun apply(fn: String, a: Complex): Complex = when (fn) {
-        "sin" -> snapTrig(toAng(a).sin())
-        "cos" -> snapTrig(toAng(a).cos())
+        "sin" -> toAng(a).let { snapTrig(it.sin(), it) }
+        "cos" -> toAng(a).let { snapTrig(it.cos(), it) }
         "tan" -> {
             // tan(90°+k180°) 分母为 0 → Math ERROR（与卡西欧一致）
             val ia = toAng(a)
             val c = ia.cos()
             if (c.isZero()) throw IllegalArgumentException("Math ERROR")
-            snapTrig(ia.sin() / c)
+            snapTrig(ia.sin() / c, ia)
         }
         "asin" -> fromAng(realOnly(a) { asin(it) })
         "acos" -> fromAng(realOnly(a) { acos(it) })

@@ -371,15 +371,15 @@ object Modes {
         )),
         UnitCategory("面积", listOf(
             UnitItem("平方米 m²", 1.0), UnitItem("平方厘米 cm²", 1e-4), UnitItem("公顷 ha", 1e4),
-            UnitItem("平方千米 km²", 1e6), UnitItem("亩", 666.6667), UnitItem("英亩 acre", 4046.856)
+            UnitItem("平方千米 km²", 1e6), UnitItem("亩", 1e4 / 15.0), UnitItem("英亩 acre", 4046.8564224)
         )),
         UnitCategory("体积", listOf(
             UnitItem("立方米 m³", 1.0), UnitItem("升 L", 1e-3), UnitItem("毫升 mL", 1e-6),
-            UnitItem("加仑(美) gal", 0.00378541), UnitItem("加仑(英) gal", 0.00454609)
+            UnitItem("加仑(美) gal", 0.003785411784), UnitItem("加仑(英) gal", 0.00454609)
         )),
         UnitCategory("质量", listOf(
             UnitItem("千克 kg", 1.0), UnitItem("克 g", 1e-3), UnitItem("毫克 mg", 1e-6),
-            UnitItem("吨 t", 1e3), UnitItem("磅 lb", 0.4535924), UnitItem("盎司 oz", 0.02834952)
+            UnitItem("吨 t", 1e3), UnitItem("磅 lb", 0.45359237), UnitItem("盎司 oz", 0.028349523125)
         )),
         UnitCategory("温度", listOf(
             UnitItem("摄氏度 ℃", 1.0, 0.0), UnitItem("华氏度 ℉", 5.0 / 9.0, -160.0 / 9.0),
@@ -391,18 +391,18 @@ object Modes {
         )),
         UnitCategory("速度", listOf(
             UnitItem("米/秒 m/s", 1.0), UnitItem("千米/时 km/h", 1.0 / 3.6),
-            UnitItem("英里/时 mph", 0.44704), UnitItem("节 kn", 0.5144444)
+            UnitItem("英里/时 mph", 0.44704), UnitItem("节 kn", 1852.0 / 3600.0)
         )),
         UnitCategory("压力", listOf(
             UnitItem("帕 Pa", 1.0), UnitItem("千帕 kPa", 1e3), UnitItem("巴 bar", 1e5),
-            UnitItem("大气压 atm", 101325.0), UnitItem("毫米汞柱 mmHg", 133.3224)
+            UnitItem("大气压 atm", 101325.0), UnitItem("毫米汞柱 mmHg", 133.322387415)
         )),
         UnitCategory("能量", listOf(
             UnitItem("焦耳 J", 1.0), UnitItem("千焦 kJ", 1e3), UnitItem("卡路里 cal", 4.184),
             UnitItem("千瓦时 kWh", 3.6e6), UnitItem("电子伏 eV", 1.602176634e-19)
         )),
         UnitCategory("功率", listOf(
-            UnitItem("瓦 W", 1.0), UnitItem("千瓦 kW", 1e3), UnitItem("马力 hp", 745.6999)
+            UnitItem("瓦 W", 1.0), UnitItem("千瓦 kW", 1e3), UnitItem("马力 hp", 745.6998715822702)
         ))
     )
 

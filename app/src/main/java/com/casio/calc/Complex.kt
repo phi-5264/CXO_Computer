@@ -99,8 +99,9 @@ class Complex(val re: Double, val im: Double = 0.0) {
     fun equalsReal(v: Double): Boolean = abs(re - v) < 1e-12 && isReal
 
     /** 四舍五入到 12 位有效数字，消除浮点噪声。
-     *  归零判断按"相对量级"：只抹掉比整体小 1e-12 以下的成分，
-     *  这样 2^-50、1e-15、i×1e-15 这类真实小值不会被抹成 0。
+     *  归零判断按"相对量级"：只抹掉比整体小 1e-15 以下的成分（约几个 ulp），
+     *  这样 2^-50、1e-15、i×1e-15 这类真实小值不会被抹成 0，
+     *  1e15+i 这种实部巨大、虚部真实的复数也不会丢掉虚部。
      *  （复数路线算出的实数值通常带 1e-16 量级虚部噪声，相对判断能正确清掉。） */
     fun cleaned(): Complex {
         fun round12(v: Double): Double {
@@ -113,7 +114,7 @@ class Complex(val re: Double, val im: Double = 0.0) {
         }
         val mag = max(abs(re), abs(im))
         if (mag == 0.0 || mag.isNaN() || mag.isInfinite()) return Complex(round12(re), round12(im))
-        val eps = 1e-12 * mag
+        val eps = 1e-15 * mag
         val r = if (abs(re) < eps) 0.0 else re
         val i = if (abs(im) < eps) 0.0 else im
         return Complex(round12(r), round12(i))
