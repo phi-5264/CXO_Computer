@@ -43,6 +43,38 @@ class CalcTest {
     }
 
     @Test
+    fun `隐式乘法优先级高于除法`() {
+        // 6÷2(1+2) = 1（卡西欧 fx-991CN X 语义：省略乘号先结合）
+        val implicit = eval(
+            num(6.0), op("÷"), num(2.0),
+            LpTok(), num(1.0), op("+"), num(2.0), RpTok()
+        )
+        assertEquals(1.0, implicit.re, 1e-12)
+        // 显式写 × 时仍按从左到右：6÷2×(1+2) = 9
+        val explicit = eval(
+            num(6.0), op("÷"), num(2.0), op("×"),
+            LpTok(), num(1.0), op("+"), num(2.0), RpTok()
+        )
+        assertEquals(9.0, explicit.re, 1e-12)
+    }
+
+    @Test
+    fun `隐式乘法优先级的其他写法`() {
+        // 8÷2(2+2) = 1
+        val a = eval(
+            num(8.0), op("÷"), num(2.0),
+            LpTok(), num(2.0), op("+"), num(2.0), RpTok()
+        )
+        assertEquals(1.0, a.re, 1e-12)
+        // 1÷2(3) = 1/6
+        val b = eval(num(1.0), op("÷"), num(2.0), LpTok(), num(3.0), RpTok())
+        assertEquals(1.0 / 6.0, b.re, 1e-12)
+        // 2(3+4) 不受影响
+        val c = eval(num(2.0), LpTok(), num(3.0), op("+"), num(4.0), RpTok())
+        assertEquals(14.0, c.re, 1e-12)
+    }
+
+    @Test
     fun `百分号语义`() {
         // 100 + 10% = 110
         val r = eval(num(100.0), op("+"), num(10.0), PostTok("percent", "%"))
