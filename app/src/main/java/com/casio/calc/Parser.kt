@@ -46,14 +46,14 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
     }
 
     private fun parseTerm(): Complex {
-        var left = parseUnary()
+        var left = parseImplicit()
         while (true) {
             val t = peek()
             when {
                 t is OpTok && (t.op == "×" || t.op == "÷" || t.op == "C" || t.op == "P") -> {
                     next()
                     pctTerm = null
-                    val right = parseUnary()
+                    val right = parseImplicit()
                     left = when (t.op) {
                         "×" -> left * right
                         "÷" -> left / right
@@ -73,14 +73,25 @@ class Parser(private val toks: List<Tok>, private val ctx: EvalCtx) {
                     left = left * polarUnit(ang)
                     pctTerm = null
                 }
-                isImplicitStart(t) -> {
-                    pctTerm = null
-                    val right = parseUnary()
-                    left = left * right
-                    pctTerm = null
-                }
                 else -> break
             }
+        }
+        return left
+    }
+
+    /**
+     * 隐式乘法（省略 × 的写法，如 2(1+2)、2x、2sin30）优先级高于显式 ×÷，
+     * 与卡西欧 fx-991CN X 一致：6÷2(1+2) = 1，而不是 9。
+     * 显式写法 6÷2×(1+2) 仍为 9。
+     */
+    private fun parseImplicit(): Complex {
+        var left = parseUnary()
+        while (true) {
+            if (!isImplicitStart(peek())) break
+            pctTerm = null
+            val right = parseUnary()
+            left = left * right
+            pctTerm = null
         }
         return left
     }
