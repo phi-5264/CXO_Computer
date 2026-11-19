@@ -403,6 +403,29 @@ object Modes {
         )),
         UnitCategory("功率", listOf(
             UnitItem("瓦 W", 1.0), UnitItem("千瓦 kW", 1e3), UnitItem("马力 hp", 745.6998715822702)
+        )),
+        UnitCategory("数据", listOf(
+            UnitItem("字节 B", 1.0), UnitItem("比特 bit", 0.125),
+            UnitItem("千字节 kB", 1e3), UnitItem("兆字节 MB", 1e6),
+            UnitItem("吉字节 GB", 1e9), UnitItem("太字节 TB", 1e12),
+            UnitItem("千比特 kb", 125.0), UnitItem("兆比特 Mb", 125e3),
+            UnitItem("KiB", 1024.0), UnitItem("MiB", 1024.0 * 1024.0),
+            UnitItem("GiB", 1024.0 * 1024.0 * 1024.0), UnitItem("TiB", 1024.0 * 1024.0 * 1024.0 * 1024.0)
+        )),
+        UnitCategory("频率", listOf(
+            UnitItem("赫兹 Hz", 1.0), UnitItem("千赫兹 kHz", 1e3),
+            UnitItem("兆赫兹 MHz", 1e6), UnitItem("吉赫兹 GHz", 1e9),
+            UnitItem("转/分 rpm", 1.0 / 60.0)
+        )),
+        UnitCategory("角度", listOf(
+            UnitItem("度 °", 1.0), UnitItem("弧度 rad", 180.0 / PI),
+            UnitItem("百分度 g", 0.9), UnitItem("角分 ′", 1.0 / 60.0),
+            UnitItem("角秒 ″", 1.0 / 3600.0), UnitItem("转 r", 360.0)
+        )),
+        UnitCategory("光照", listOf(
+            UnitItem("勒克斯 lx", 1.0), UnitItem("千勒克斯 klx", 1e3),
+            UnitItem("英尺烛光 fc", 1.0 / 0.09290304), UnitItem("辐透 ph", 1e4),
+            UnitItem("诺克斯 nx", 1e-3)
         ))
     )
 
