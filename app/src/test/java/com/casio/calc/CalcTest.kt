@@ -191,6 +191,9 @@ class CalcTest {
         assertEquals("1.00×10^11", Fmt.real(9.999e10, cfg))
         // 阈值以下仍保持固定小数位
         assertEquals("9999999999.00", Fmt.real(9999999999.0, cfg))
+        // 阈值看四舍五入后的值：9.9999999999999e9 进位后是 11 位整数，应切科学计数
+        assertEquals("1.00×10^10", Fmt.real(9999999999.9999, cfg))
+        assertEquals("-1.00×10^10", Fmt.real(-9999999999.9999, cfg))
         // 极大值不能拼出几百位字符
         assertEquals("1.00×10^300", Fmt.real(1e300, cfg))
     }
