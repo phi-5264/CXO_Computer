@@ -119,16 +119,35 @@ class CalcState {
 
     fun inputOperator(opSym: String) {
         val disp = when (opSym) { "C" -> "nCr"; "P" -> "nPr"; else -> opSym }
-        // 末尾已是二元运算符时直接替换，避免 2+×3 这种"多按一次"变成语法错误
-        // （"-" 视为负号，允许 2^-3、2×-3 这类输入，不做替换）
+        // 末尾已是运算符时直接替换，避免 2+×3 这种"多按一次"变成语法错误。
+        // 减号可能是负号，允许 2^-3、2×-3 这类输入，所以按减号本身不做替换；
+        // 但按其他运算符时：末尾的一元负号应被清掉（2×- 再按 × → 2×），
+        // 末尾的二元减号应被替换（2- 再按 × → 2×）。
         if (cursor > 0 && cursor == tokens.size && opSym != "-") {
-            val l = tokens[cursor - 1]
-            if (l is OpTok && l.op != "-") {
-                tokens[cursor - 1] = OpTok(opSym, disp)
-                return
+            while (cursor > 0 && isUnaryMinusAt(cursor - 1)) {
+                tokens.removeAt(cursor - 1)
+                cursor--
+            }
+            if (cursor > 0) {
+                val l = tokens[cursor - 1]
+                if (l is OpTok) {
+                    tokens[cursor - 1] = OpTok(opSym, disp)
+                    return
+                }
             }
         }
         insert(OpTok(opSym, disp))
+    }
+
+    /** index 处的 "-" 是否为一元负号：位于开头，或紧跟运算符/左括号/函数名 */
+    private fun isUnaryMinusAt(index: Int): Boolean {
+        val t = tokens.getOrNull(index) ?: return false
+        if (t !is OpTok || t.op != "-") return false
+        if (index == 0) return true
+        return when (tokens[index - 1]) {
+            is OpTok, is LpTok, is FnTok, is AngleTok -> true
+            else -> false
+        }
     }
 
     fun inputFunc(fn: String, display: String) {
@@ -170,7 +189,14 @@ class CalcState {
             if (t is LpTok) open++
             if (t is RpTok) open--
         }
-        if (open > 0) insert(RpTok())
+        // 右括号前面必须是一个已经完整的值；否则会产生 "()"、"(1+)" 这类必然报错的式子
+        if (open > 0 && cursor > 0 && endsValue(tokens[cursor - 1])) insert(RpTok())
+    }
+
+    /** 该 token 能否作为一个值结束（右括号只能跟在它后面） */
+    private fun endsValue(t: Tok): Boolean = when (t) {
+        is NumTok, is ConstTok, is VarTok, is ImagTok, is RpTok, is PostTok -> true
+        else -> false
     }
 
     fun inputNegate() {
