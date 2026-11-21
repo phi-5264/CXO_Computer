@@ -96,6 +96,10 @@ class CalcState {
                 }
             }
         }
+        // 科学计数法常数（如 6.62607015ᴱ-34）的显示串以指数结尾，直接续上数字会拼成
+        // "6.62607015ᴱ-342" 这种看着像一个数、实际却按隐式乘法计算的式子；补一个显式乘号。
+        val prev = tokens.getOrNull(cursor - 1)
+        if (prev is NumTok && hasExponent(prev.d)) insert(OpTok("×", "×"))
         insert(NumTok(Complex.fromReal(d.toDouble()), d.toString()))
     }
 
