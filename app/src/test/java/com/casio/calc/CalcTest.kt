@@ -159,6 +159,46 @@ class CalcTest {
     }
 
     @Test
+    fun `新增单位类别换算正确`() {
+        fun cat(name: String) = Modes.unitCategories.first { it.name == name }
+        fun unit(catName: String, prefix: String) = cat(catName).units.first { it.name.startsWith(prefix) }
+
+        // 数据：1 MiB = 1024 KiB = 1048576 B；1 kB = 8000 bit
+        assertEquals(1048576.0, Modes.convertUnit(1.0, unit("数据", "MiB"), cat("数据").units[0]), 1e-9)
+        assertEquals(8000.0, Modes.convertUnit(1.0, unit("数据", "千字节"), unit("数据", "比特")), 1e-9)
+        assertEquals(1000.0, Modes.convertUnit(1.0, unit("数据", "吉字节"), unit("数据", "兆字节")), 1e-9)
+
+        // 频率：1 MHz = 1000 kHz；60 rpm = 1 Hz
+        assertEquals(1000.0, Modes.convertUnit(1.0, unit("频率", "兆赫兹"), unit("频率", "千赫兹")), 1e-12)
+        assertEquals(1.0, Modes.convertUnit(60.0, unit("频率", "转/分"), unit("频率", "赫兹")), 1e-12)
+
+        // 角度：180° = π rad；1 rad ≈ 57.29577951308232°
+        assertEquals(Math.PI, Modes.convertUnit(180.0, unit("角度", "度"), unit("角度", "弧度")), 1e-12)
+        assertEquals(180.0 / Math.PI, Modes.convertUnit(1.0, unit("角度", "弧度"), unit("角度", "度")), 1e-12)
+        assertEquals(1.0, Modes.convertUnit(60.0, unit("角度", "角分"), unit("角度", "度")), 1e-12)
+
+        // 光照：1 fc ≈ 10.7639104167 lx；1000 lx = 1 klx
+        assertEquals(10.763910416709722, Modes.convertUnit(1.0, unit("光照", "英尺烛光"), unit("光照", "勒克斯")), 1e-9)
+        assertEquals(1.0, Modes.convertUnit(1000.0, unit("光照", "勒克斯"), unit("光照", "千勒克斯")), 1e-12)
+    }
+
+    @Test
+    fun `FIX 模式超大数自动切科学计数`() {
+        val cfg = CalcConfig().apply { dispMode = DispMode.FIX; digits = 2 }
+        assertEquals("1.00×10^10", Fmt.real(1e10, cfg))
+        assertEquals("-1.00×10^10", Fmt.real(-1e10, cfg))
+        // 舍入后尾数进到 10 时，指数要跟着进一位
+        assertEquals("1.00×10^11", Fmt.real(9.999e10, cfg))
+        // 阈值以下仍保持固定小数位
+        assertEquals("9999999999.00", Fmt.real(9999999999.0, cfg))
+        // 阈值看四舍五入后的值：9.9999999999999e9 进位后是 11 位整数，应切科学计数
+        assertEquals("1.00×10^10", Fmt.real(9999999999.9999, cfg))
+        assertEquals("-1.00×10^10", Fmt.real(-9999999999.9999, cfg))
+        // 极大值不能拼出几百位字符
+        assertEquals("1.00×10^300", Fmt.real(1e300, cfg))
+    }
+
+    @Test
     fun `温度换算双向正确`() {
         val t = Modes.unitCategories.first { it.name == "温度" }
         val c = t.units[0]; val f = t.units[1]; val k = t.units[2]

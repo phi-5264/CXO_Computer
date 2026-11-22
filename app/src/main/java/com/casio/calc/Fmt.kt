@@ -40,8 +40,21 @@ object Fmt {
 
         when (cfg.dispMode) {
             DispMode.FIX -> {
+                fun sci(): String {
+                    var exp = floor(log10(a)).toInt()
+                    var man = a / 10.0.pow(exp)
+                    if (String.format(Locale.US, "%.${cfg.digits}f", man).toDouble() >= 10.0) {
+                        man /= 10.0; exp++
+                    }
+                    val s = String.format(Locale.US, "%.${cfg.digits}f", man)
+                    return (if (neg) "-" else "") + s + "×10^" + exp
+                }
+                // 整数位到 10 位后改科学计数，否则 1e300 会拼出几百个字符
+                if (a >= 1e10) return sci()
                 // FIX 模式必须保留固定的小数位数（1.50 不能显示成 1.5）
                 val s = String.format(Locale.US, "%.${cfg.digits}f", a)
+                // 判断阈值要看四舍五入后的值：9999999999.9999 会进位成 11 位整数
+                if (s.toDouble() >= 1e10) return sci()
                 return (if (neg) "-" else "") + s
             }
             DispMode.SCI -> {
