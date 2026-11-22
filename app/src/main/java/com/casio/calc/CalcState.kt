@@ -90,6 +90,8 @@ class CalcState {
             if (l is NumTok && !hasExponent(l.d)) {
                 var s = l.d + d.toString()
                 if (s == "0$d") s = d.toString()
+                // ± 之后的 "-0" 再输入数字，应变成 "-5" 而不是 "-05"
+                else if (s == "-0$d") s = "-$d"
                 if (isValidNum(s)) {
                     tokens[cursor - 1] = NumTok(Complex.fromReal(s.toDouble()), s)
                     return
@@ -180,16 +182,29 @@ class CalcState {
         if (cursor > 0) {
             val l = tokens[cursor - 1]
             if (l is NumTok) {
-                val v = -l.n.re
-                tokens[cursor - 1] = NumTok(Complex.fromReal(v), formatNum(v))
+                // 直接翻转显示串的符号：按数值重新格式化会把 -0 变成 0、
+                // 把 "0." 变成 "0"，导致后续输入的 5 变成正数 5 或丢失小数点
+                val nd = if (l.d.startsWith("-")) l.d.substring(1) else "-" + l.d
+                tokens[cursor - 1] = NumTok(Complex.fromReal(-l.n.re), nd)
                 return
             }
         }
         insert(OpTok("-", "-"))
     }
 
+    /** 光标前是否已是一个完整的值（用于判断 ×10ˣ 需不需要补乘号） */
+    private fun prevEndsValue(): Boolean {
+        if (cursor == 0) return false
+        return when (tokens[cursor - 1]) {
+            is NumTok, is ConstTok, is VarTok, is ImagTok, is RpTok, is PostTok -> true
+            else -> false
+        }
+    }
+
     fun inputExp() {
-        insert(OpTok("×", "×"))
+        // 开头、运算符后、左括号后补 "×10^" 会得到 ×10^3 / 2+×10^3 这种必然报错的式子；
+        // 只有在前面已经有值时才插入乘号
+        if (prevEndsValue()) insert(OpTok("×", "×"))
         insert(NumTok(Complex.fromReal(10.0), "10"))
         insert(OpTok("^", "^"))
     }
