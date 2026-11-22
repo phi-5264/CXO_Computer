@@ -119,6 +119,9 @@ class CalcState {
 
     fun inputOperator(opSym: String) {
         val disp = when (opSym) { "C" -> "nCr"; "P" -> "nPr"; else -> opSym }
+        // 开头没有左操作数：二元运算符（× ÷ ^ nCr nPr）按下去必然语法错误，直接忽略。
+        // "-" 在这里是一元负号，仍然允许输入。
+        if (opSym != "-" && cursor == 0) return
         // 末尾已是运算符时直接替换，避免 2+×3 这种"多按一次"变成语法错误。
         // 减号可能是负号，允许 2^-3、2×-3 这类输入，所以按减号本身不做替换；
         // 但按其他运算符时：末尾的一元负号应被清掉（2×- 再按 × → 2×），
@@ -134,6 +137,12 @@ class CalcState {
                     tokens[cursor - 1] = OpTok(opSym, disp)
                     return
                 }
+                // 左操作数不完整（紧跟左括号 / 函数名 / ∠）时忽略这次按键：
+                // 否则会拼出 (×5、sin(×5 这类按下去就必然报错、只能删除的死路。
+                if (!endsValue(l)) return
+            } else {
+                // 清掉一元负号后已经回到开头，同样没有左操作数
+                return
             }
         }
         insert(OpTok(opSym, disp))
