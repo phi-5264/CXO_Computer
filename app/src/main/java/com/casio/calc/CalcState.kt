@@ -109,7 +109,10 @@ class CalcState {
     fun inputDot() {
         if (cursor > 0) {
             val l = tokens[cursor - 1]
-            if (l is NumTok && !l.d.contains('.') && !hasExponent(l.d)) {
+            if (l is NumTok) {
+                // 已经有小数点（或科学计数法的尾数）时忽略，否则会拼出 "1.20." 这种式子，
+                // 再输入数字就变成 "1.20.5"，被当作隐式乘法算成 0.6
+                if (l.d.contains('.') || hasExponent(l.d)) return
                 tokens[cursor - 1] = NumTok(l.n, l.d + ".")
                 return
             }
