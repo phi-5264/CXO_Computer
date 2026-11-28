@@ -7,7 +7,15 @@ import kotlin.math.*
  */
 class Complex(val re: Double, val im: Double = 0.0) {
 
-    val isReal: Boolean get() = abs(im) < 1e-12
+    /** 是否可视为实数：按相对量级判断（约几个 ulp），不能再用 1e-12 绝对阈值。
+     *  否则 1e-13·i 这类真实的小纯虚数会被当成实数，pow/sqrt 走实数分支后虚部被整个丢掉
+     *  （例如 (1e-13·i)^2 会算成 0，而正确结果是 -1e-26）。 */
+    val isReal: Boolean
+        get() {
+            if (im == 0.0) return true
+            val mag = max(abs(re), abs(im))
+            return abs(im) < 1e-15 * mag
+        }
 
     fun isZero(): Boolean = abs(re) < 1e-12 && abs(im) < 1e-12
 

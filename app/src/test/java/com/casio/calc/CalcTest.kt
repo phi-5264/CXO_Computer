@@ -282,4 +282,31 @@ class CalcTest {
         // √9 + 1 = 4（不能变成 √10）
         assertEquals(4.0, eval(FnTok("sqrt", "√"), num(9.0), op("+"), num(1.0)).re, 1e-12)
     }
+
+    @Test
+    fun `极小纯虚数不被当作实数`() {
+        // 1e-13·i 是真实的虚数，isReal 不能按 1e-12 绝对阈值误判为实数
+        val z = Complex(0.0, 1e-13)
+        assertEquals(false, z.isReal)
+
+        // 平方应走复数路线得到 -1e-26，而不是被实数分支算成 0
+        val sq = z.pow(Complex.fromReal(2.0))
+        assertEquals(-1e-26, sq.re, 1e-30)
+        assertEquals(0.0, sq.im, 1e-30)
+
+        // 开方应为 (√1e-13)·e^{iπ/4}，实部虚部都约 7.07e-7，而不是 0
+        val rt = z.sqrt()
+        assertEquals(kotlin.math.sqrt(1e-13) / kotlin.math.sqrt(2.0), rt.re, 1e-15)
+        assertEquals(rt.re, rt.im, 1e-15)
+    }
+
+    @Test
+    fun `大实部旁的真实小虚部不丢`() {
+        // (1 + 1e-13·i)^2 = 1 + 2e-13·i - 1e-26，虚部虽小但相对 1 是 1e-13，必须保留
+        val w = Complex(1.0, 1e-13)
+        assertEquals(true, w.isReal.not())
+        val sq = w.pow(Complex.fromReal(2.0))
+        assertEquals(1.0, sq.re, 1e-12)
+        assertEquals(2e-13, sq.im, 1e-18)
+    }
 }
